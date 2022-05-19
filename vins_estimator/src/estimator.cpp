@@ -19,6 +19,9 @@ void Estimator::setParameter()
     }
     f_manager.setRic(ric);
     // 这里可以看到虚拟相机的用法
+    /**
+     * notes: 重投影误差的阈值为1.5个像素
+     */
     ProjectionFactor::sqrt_info = FOCAL_LENGTH / 1.5 * Matrix2d::Identity();
     ProjectionTdFactor::sqrt_info = FOCAL_LENGTH / 1.5 * Matrix2d::Identity();
     td = TD;
@@ -111,6 +114,7 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
     // 所以只有大于0才处理
     if (frame_count != 0)
     {
+        // 保存dt、acc、gyr，并计算雅克比和协方差
         pre_integrations[frame_count]->push_back(dt, linear_acceleration, angular_velocity);
         //if(solver_flag != NON_LINEAR)
             // 这个量用来做初始化用的
@@ -143,6 +147,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         marginalization_flag = MARGIN_OLD;
     else
         // 否则移除上一帧
+        // xc's todo: 这是什么意思？
         marginalization_flag = MARGIN_SECOND_NEW;
 
     ROS_DEBUG("this frame is--------------------%s", marginalization_flag ? "reject" : "accept");
@@ -175,7 +180,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
             {
                 ROS_WARN("initial extrinsic rotation calib success");
                 ROS_WARN_STREAM("initial extrinsic rotation: " << endl << calib_ric);
-                ric[0] = calib_ric;
+                ric[0] = calib_ric;  // ric表示多个相机与IMU的外参，这里只标定了第一个
                 RIC[0] = calib_ric;
                 // 标志位设置成可信的外参初值
                 ESTIMATE_EXTRINSIC = 1;
@@ -188,7 +193,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         if (frame_count == WINDOW_SIZE) // 有足够的帧数
         {
             bool result = false;
-            // 要有可信的外参值，同时距离上次初始化不成功至少相邻0.1s
+            // 要有可信的外参值，同时距离上次初始化不成功至少相邻0.1s: 不成功的附近依然不会成功
             // Step 3： VIO初始化
             if( ESTIMATE_EXTRINSIC != 2 && (header.stamp.toSec() - initial_timestamp) > 0.1)
             {
@@ -260,7 +265,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
 bool Estimator::initialStructure()
 {
     TicToc t_sfm;
-    // Step 1 check imu observibility
+    // Step 1 check imu observibility：检测运动速度的方差
     {
         map<double, ImageFrame>::iterator frame_it;
         Vector3d sum_g;
@@ -269,7 +274,7 @@ bool Estimator::initialStructure()
         {
             double dt = frame_it->second.pre_integration->sum_dt;
             Vector3d tmp_g = frame_it->second.pre_integration->delta_v / dt;
-            // 累加每一帧带重力加速度的deltav
+            // 累加每一帧带重力加速度的deltav：预积分中的delta_v
             sum_g += tmp_g;
         }
         Vector3d aver_g;
@@ -280,6 +285,9 @@ bool Estimator::initialStructure()
             double dt = frame_it->second.pre_integration->sum_dt;
             Vector3d tmp_g = frame_it->second.pre_integration->delta_v / dt;
             // 求方差
+            /**
+             * notes: 三个轴上的方差一起计算
+             */
             var += (tmp_g - aver_g).transpose() * (tmp_g - aver_g);
             //cout << "frame g " << tmp_g.transpose() << endl;
         }
@@ -310,7 +318,7 @@ bool Estimator::initialStructure()
         {
             imu_j++;
             Vector3d pts_j = it_per_frame.point;
-            // 索引以及各自坐标系下的坐标
+            // 索引以及各自坐标系下的坐标: 归一化相机系坐标
             tmp_feature.observation.push_back(make_pair(imu_j, Eigen::Vector2d{pts_j.x(), pts_j.y()}));
         }
         sfm_f.push_back(tmp_feature);
@@ -339,7 +347,7 @@ bool Estimator::initialStructure()
     map<double, ImageFrame>::iterator frame_it;
     map<int, Vector3d>::iterator it;
     frame_it = all_image_frame.begin( );
-    // i代表跟这个帧最近的KF的索引
+    // i代表跟这个帧最近的KF的索引，用来提供pnp的初始值
     for (int i = 0; frame_it != all_image_frame.end( ); frame_it++)
     {
         // provide initial guess
@@ -526,6 +534,11 @@ bool Estimator::relativePose(Matrix3d &relative_R, Vector3d &relative_T, int &l)
 {
     // find previous frame which contians enough correspondance and parallex with newest frame
     // 优先从最前面开始
+    /**
+     * notes:
+     *      1. 我们希望两帧离的足够远，使得有足够的平移
+     *      2. 我们又不希望离的过远，避免没有足够的匹配点
+     */
     for (int i = 0; i < WINDOW_SIZE; i++)
     {
         vector<pair<Vector3d, Vector3d>> corres;
@@ -567,6 +580,7 @@ void Estimator::solveOdometry()
     {
         TicToc t_tri;
         // 先把应该三角化但是没有三角化的特征点三角化
+        // xc's todo: 为什么还有应该初始化而没有初始化的特征点
         f_manager.triangulate(Ps, tic, ric);
         ROS_DEBUG("triangulation costs %f", t_tri.toc());
         optimization();
@@ -790,7 +804,7 @@ void Estimator::optimization()
         // 由于姿态不满足正常的加法，也就是李群上没有加法，因此需要自己定义他的加法
         ceres::LocalParameterization *local_parameterization = new PoseLocalParameterization();
         problem.AddParameterBlock(para_Pose[i], SIZE_POSE, local_parameterization);
-        problem.AddParameterBlock(para_SpeedBias[i], SIZE_SPEEDBIAS);
+        problem.AddParameterBlock(para_SpeedBias[i], SIZE_SPEEDBIAS);  // 默认的加法
     }
     // 参数块 2： 相机imu间的外参
     for (int i = 0; i < NUM_OF_CAM; i++)
@@ -812,10 +826,10 @@ void Estimator::optimization()
         problem.AddParameterBlock(para_Td[0], 1);
         //problem.SetParameterBlockConstant(para_Td[0]);
     }
-    // 实际上还有地图点，其实平凡的参数块不需要调用AddParameterBlock，增加残差块接口时会自动绑定
+    // 实际上还有地图点，其实平凡的（不需要定义“加法”）参数块不需要调用AddParameterBlock，增加残差块接口时会自动绑定
     TicToc t_whole, t_prepare;
     // eigen -> double
-    vector2double();
+    vector2double();  // 给予优化的初值
     // Step 2 通过残差约束来添加残差块，类似g2o的边
     // 上一次的边缘化结果作为这一次的先验
     if (last_marginalization_info)
@@ -832,7 +846,7 @@ void Estimator::optimization()
         // 时间过长这个约束就不可信了
         if (pre_integrations[j]->sum_dt > 10.0)
             continue;
-        IMUFactor* imu_factor = new IMUFactor(pre_integrations[j]);
+        IMUFactor* imu_factor = new IMUFactor(pre_integrations[j]);  // costFunction
         problem.AddResidualBlock(imu_factor, NULL, para_Pose[i], para_SpeedBias[i], para_Pose[j], para_SpeedBias[j]);
     }
     int f_m_cnt = 0;
@@ -986,6 +1000,10 @@ void Estimator::optimization()
 
             marginalization_info->addResidualBlockInfo(residual_block_info);
         }
+        /**
+         * notes:
+         *      1. drop set：表示parameter block中下标为drop set的元素是待边缘化的
+         */
         // 只有第1个预积分和待边缘化参数块相连
         {
             if (pre_integrations[1]->sum_dt < 10.0)

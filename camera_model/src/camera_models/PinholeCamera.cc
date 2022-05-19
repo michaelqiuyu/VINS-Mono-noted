@@ -455,6 +455,12 @@ PinholeCamera::liftProjective(const Eigen::Vector2d& p, Eigen::Vector3d& P) cons
 
     // Lift points to normalised plane
     // 投影到归一化相机坐标系
+    /**
+     * author: xiongchao
+     * desc: 将图像点变换到归一化相机坐标系
+     *      x / z = u / f_x - c_x / f_x;
+     *      y / z = v / f_y - c_y / f_y;
+     */
     mx_d = m_inv_K11 * p(0) + m_inv_K13;
     my_d = m_inv_K22 * p(1) + m_inv_K23;
 
@@ -491,11 +497,19 @@ PinholeCamera::liftProjective(const Eigen::Vector2d& p, Eigen::Vector3d& P) cons
         // 参考https://github.com/HKUST-Aerial-Robotics/VINS-Mono/issues/48
         {
             // Recursive distortion model
+            /**
+             * author: xiongchao
+             * 经验值，实际使用的时候需要验证一下
+             */
             int n = 8;
             Eigen::Vector2d d_u;
             // 这里mx_d + du = 畸变后
             distortion(Eigen::Vector2d(mx_d, my_d), d_u);
             // Approximate value
+            /**
+             * author: xiongchao
+             * 实际上计算的是迭代的步长
+             */
             mx_u = mx_d - d_u(0);
             my_u = my_d - d_u(1);
 

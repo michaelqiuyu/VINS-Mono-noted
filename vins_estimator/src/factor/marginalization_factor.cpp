@@ -51,6 +51,11 @@ void ResidualBlockInfo::Evaluate()
 
         double sqrt_rho1_ = sqrt(rho[1]);
 
+        /**
+         * notes:
+         *      1. 此处的详细论述请见：http://ceres-solver.org/nnls_modeling.html?highlight=loss#_CPPv4N5ceres12LossFunctionE
+         */
+
         if ((sq_norm == 0.0) || (rho[2] <= 0.0))  // 柯西核p = log(s+1),rho[2]<＝0始终成立，一般核函数二阶导数都是小于0
         {
             residual_scaling_ = sqrt_rho1_;
@@ -59,11 +64,12 @@ void ResidualBlockInfo::Evaluate()
         else
         {
             const double D = 1.0 + 2.0 * sq_norm * rho[2] / rho[1];
+            // 这里的alpha也就是上述网址中的Theory部分的alpha
             const double alpha = 1.0 - sqrt(D);
             residual_scaling_ = sqrt_rho1_ / (1 - alpha);
             alpha_sq_norm_ = alpha / sq_norm;
         }
-        // 这里就相当于残差雅克比都乘上sqrt_rho1_，及核函数所在的点的一阶导，基本都是小于1
+        // 这里就相当于残差雅克比都乘上sqrt_rho1_，即核函数所在的点的一阶导，基本都是小于1
         for (int i = 0; i < static_cast<int>(parameter_blocks.size()); i++)
         {
             jacobians[i] = sqrt_rho1_ * (jacobians[i] - alpha_sq_norm_ * residuals * (residuals.transpose() * jacobians[i]));
@@ -311,18 +317,30 @@ void MarginalizationInfo::marginalize()
 
     //TODO
     // Amm矩阵的构建是为了保证其正定性
+    /**
+     * notes:
+     *      1. 由于浮点数运算的误差，有可能A不再是一个对称矩阵，非对称矩阵不一定能够相似对角化
+     *      2. 利用0.5 * (A + A.transpose())来近似A，理论上A就是一个对称矩阵，其结果就是A
+     */
     Eigen::MatrixXd Amm = 0.5 * (A.block(0, 0, m, m) + A.block(0, 0, m, m).transpose());
     Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> saes(Amm);   // 特征值分解
 
     //ROS_ASSERT_MSG(saes.eigenvalues().minCoeff() >= -1e-4, "min eigenvalue %f", saes.eigenvalues().minCoeff());
     // 一个逆矩阵的特征值是原矩阵的倒数，特征向量相同　select类似c++中 ? :运算符
     // 利用特征值取逆来构造其逆矩阵
+    // A * P = P * diag()，A.inv = P * diag().inv * P.inv
+    /**
+     * 为了说明这样操作的理由，不妨举一个特殊的例子，Amm = diag(a1, a2, ..., an)，ai表示方差，如果ai≠0，那么
+     * J = (e1.t, e2.t, ..., en.t).t，J.t * Amm * J = ∑ei.t * ei / ai
+     * ai等于0，也就是方差为0，也就是没有波动，此时不考虑误差项ei.t * ei，因此直接将1/ai令为0即可
+     */
     Eigen::MatrixXd Amm_inv = saes.eigenvectors() * Eigen::VectorXd((saes.eigenvalues().array() > eps).select(saes.eigenvalues().array().inverse(), 0)).asDiagonal() * saes.eigenvectors().transpose();
     //printf("error1: %f\n", (Amm * Amm_inv - Eigen::MatrixXd::Identity(m, m)).sum());
 
     Eigen::VectorXd bmm = b.segment(0, m);  // 带边缘化的大小
     Eigen::MatrixXd Amr = A.block(0, m, m, n);  // 对应的四块矩阵
     Eigen::MatrixXd Arm = A.block(m, 0, n, m);
+
     Eigen::MatrixXd Arr = A.block(m, m, n, n);
     Eigen::VectorXd brr = b.segment(m, n); // 剩下的参数
     A = Arr - Arm * Amm_inv * Amr;
@@ -332,6 +350,10 @@ void MarginalizationInfo::marginalize()
     // 对A做特征值分解 A = V * S * VT,其中Ｓ是特征值构成的对角矩阵
     // 所以J = S^(1/2) * VT , 这样JT * J = (S^(1/2) * VT)T * S^(1/2) * VT = V * S^(1/2)T *  S^(1/2) * VT = V * S * VT(对角矩阵的转置等于其本身)
     // e = -(JT)-1 * b = - (S^-(1/2) * V^-1) * b = - (S^-(1/2) * VT) * b
+    /**
+     * notes:
+     *      1. 上面为了避免浮点数运算导致A变为非对称矩阵，使用了0.5 * (A + A.T)，这里理论上也应该这样操作，否则也不应该使用SelfAdjointEigenSolver接口
+     */
     Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> saes2(A);
     // 对A矩阵取逆
     Eigen::VectorXd S = Eigen::VectorXd((saes2.eigenvalues().array() > eps).select(saes2.eigenvalues().array(), 0));
@@ -340,6 +362,10 @@ void MarginalizationInfo::marginalize()
     Eigen::VectorXd S_sqrt = S.cwiseSqrt(); // 这个求得就是 S^(1/2)，不过这里是向量还不是矩阵
     Eigen::VectorXd S_inv_sqrt = S_inv.cwiseSqrt();
     // 边缘化为了实现对剩下参数块的约束，为了便于一起优化，就抽象成了残差和雅克比的形式，这样也形成了一种残差约束
+    /**
+     * notes:
+     *      1. 根据JTJ * x = JT * f(x)，将上面的形式表示为这个形式，就可以计算得到J和f(x)，他们分别是雅克比和残差
+     */
     linearized_jacobians = S_sqrt.asDiagonal() * saes2.eigenvectors().transpose();
     linearized_residuals = S_inv_sqrt.asDiagonal() * saes2.eigenvectors().transpose() * b;
     //std::cout << A << std::endl
@@ -434,6 +460,7 @@ bool MarginalizationFactor::Evaluate(double const *const *parameters, double *re
     }
     // 更新残差　边缘化后的先验误差 e = e0 + J * dx
     // 个人理解：根据FEJ．雅克比保持不变，但是残差随着优化会变化，因此下面不更新雅克比　只更新残差
+    // 关于FEJ的理解可以参考 https://www.zhihu.com/question/52869487
     // 可以参考　https://blog.csdn.net/weixin_41394379/article/details/89975386
     Eigen::Map<Eigen::VectorXd>(residuals, n) = marginalization_info->linearized_residuals + marginalization_info->linearized_jacobians * dx;
     if (jacobians)

@@ -3,10 +3,18 @@
 template <typename Derived>
 static void reduceVector(vector<Derived> &v, vector<uchar> status)
 {
+	/*
+	 * author: xiongchao
+	 * 使用双指针，避免了重新创建一个vector，直接在原来的vector上进行操作即可
+	 */
     int j = 0;
     for (int i = 0; i < int(v.size()); i++)
         if (status[i])
             v[j++] = v[i];
+	/*
+	 * author: xiongchao
+	 * 直接将j后面的数据删掉
+	 */
     v.resize(j);
 }
 
@@ -344,7 +352,7 @@ bool KeyFrame::findConnection(KeyFrame* old_kf)
 
 	matched_3d = point_3d;
 	matched_2d_cur = point_2d_uv;
-	matched_2d_cur_norm = point_2d_norm;
+	matched_2d_cur_norm = point_2d_norm;  // 归一化相机系坐标
 	matched_id = point_id;
 
 	TicToc t_match;

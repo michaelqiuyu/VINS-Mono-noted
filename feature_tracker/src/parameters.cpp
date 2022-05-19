@@ -50,13 +50,13 @@ void readParameters(ros::NodeHandle &n)
 
     fsSettings["image_topic"] >> IMAGE_TOPIC;
     fsSettings["imu_topic"] >> IMU_TOPIC;
-    MAX_CNT = fsSettings["max_cnt"];
-    MIN_DIST = fsSettings["min_dist"];
+    MAX_CNT = fsSettings["max_cnt"];  // 单帧图片最大特征点数目
+    MIN_DIST = fsSettings["min_dist"];  // 两个特征点之间的最短的像素距离
     ROW = fsSettings["image_height"];
     COL = fsSettings["image_width"];
     FREQ = fsSettings["freq"];
-    F_THRESHOLD = fsSettings["F_threshold"];
-    SHOW_TRACK = fsSettings["show_track"];
+    F_THRESHOLD = fsSettings["F_threshold"];  // 对极约束的阈值参数
+    SHOW_TRACK = fsSettings["show_track"];  // 是否可视化
     EQUALIZE = fsSettings["equalize"];  // 是否做均衡化处理
     FISHEYE = fsSettings["fisheye"];
     if (FISHEYE == 1)

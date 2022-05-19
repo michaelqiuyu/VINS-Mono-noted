@@ -429,6 +429,12 @@ EquidistantCamera::liftProjective(const Eigen::Vector2d& p, Eigen::Vector3d& P) 
 {
     // Lift points to normalised plane
     Eigen::Vector2d p_u;
+    /**
+     * author: xiongchao
+     * desc: 将图像点变换到归一化相机坐标系
+     *      x / z = u / f_x - c_x / f_x;
+     *      y / z = v / f_y - c_y / f_y;
+     */
     p_u << m_inv_K11 * p(0) + m_inv_K13,
            m_inv_K22 * p(1) + m_inv_K23;
 

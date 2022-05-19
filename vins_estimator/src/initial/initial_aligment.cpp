@@ -22,6 +22,7 @@ void solveGyroscopeBias(map<double, ImageFrame> &all_image_frame, Vector3d* Bgs)
         tmp_A.setZero();
         VectorXd tmp_b(3);
         tmp_b.setZero();
+        // frame_i->second.R是q_cobk = q_cock * q_ckbk
         Eigen::Quaterniond q_ij(frame_i->second.R.transpose() * frame_j->second.R);
         tmp_A = frame_j->second.pre_integration->jacobian.template block<3, 3>(O_R, O_BG);
         tmp_b = 2 * (frame_j->second.pre_integration->delta_q.inverse() * q_ij).vec();
@@ -33,11 +34,12 @@ void solveGyroscopeBias(map<double, ImageFrame> &all_image_frame, Vector3d* Bgs)
     ROS_WARN_STREAM("gyroscope bias initial calibration " << delta_bg.transpose());
     // 滑窗中的零偏设置为求解出来的零偏
     for (int i = 0; i <= WINDOW_SIZE; i++)
-        Bgs[i] += delta_bg;
+        Bgs[i] += delta_bg;  // 窗口内的零偏都相同
     // 对all_image_frame中预积分量根据当前零偏重新积分
     for (frame_i = all_image_frame.begin(); next(frame_i) != all_image_frame.end( ); frame_i++)
     {
         frame_j = next(frame_i);
+        // 只在初始化的时候重新传播
         frame_j->second.pre_integration->repropagate(Vector3d::Zero(), Bgs[0]);
     }
 }
@@ -130,6 +132,7 @@ void RefineGravity(map<double, ImageFrame> &all_image_frame, Vector3d &g, Vector
             b = b * 1000.0;
             x = A.ldlt().solve(b);
             VectorXd dg = x.segment<2>(n_state - 3);
+            // 始终保证重力的模长为G的模长
             g0 = (g0 + lxly * dg).normalized() * G.norm();
             //double s = x(n_state - 1);
     }   

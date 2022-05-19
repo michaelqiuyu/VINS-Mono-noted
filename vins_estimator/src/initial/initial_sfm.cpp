@@ -74,8 +74,17 @@ bool GlobalSFM::solveFrameByPnP(Matrix3d &R_initial, Vector3d &P_initial, int i,
 	cv::eigen2cv(R_initial, tmp_r);
 	cv::Rodrigues(tmp_r, rvec);
 	cv::eigen2cv(P_initial, t);
+	/**
+	 * notes:
+	 *      这里的K矩阵是单位阵的原因是，这里的二维点是归一化相机系坐标而不是像素坐标
+	 */
 	cv::Mat K = (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, 1, 0, 0, 0, 1);
 	bool pnp_succ;
+	/**
+	 * notes:
+	 *      1. 这里使用的是CV_ITERATIVE，也就是将其建模为重投影误差最小化的问题，使用LM进行求解，这里传入的R，t将作为初值进行迭代优化
+	 *      2. 这里还可以使用CV_P3P、CV_EPNP
+	 */
 	pnp_succ = cv::solvePnP(pts_3_vector, pts_2_vector, K, D, rvec, t, 1);
 	if(!pnp_succ)
 	{
@@ -225,6 +234,10 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 			Pose[i].block<3, 3>(0, 0) = c_Rotation[i];
 			Pose[i].block<3, 1>(0, 3) = c_Translation[i];
 		}
+		/**
+		 * notes:
+		 *      1. 这里按照l + 1~frame -1的顺序进行pnp求解和三角化的一个理由是：前面三角化的点 对后面的帧一定可见，因此pnp求解的匹配数目就会增加，求解的稳定性增强
+		 */
 
 		// triangulate point based on the solve pnp result
 		// 当前帧和最后一帧进行三角化处理
@@ -234,6 +247,9 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 	//3: triangulate l-----l+1 l+2 ... frame_num -2
 	for (int i = l + 1; i < frame_num - 1; i++)
 		triangulateTwoFrames(l, Pose[l], i, Pose[i], sfm_f);
+	/**
+	 * notes: 这里并没有三角化枢纽帧到最后一帧之间的这些帧之间的三角化；这些特征点留在了step4中进行三角化
+	 */
 	// Step 3 处理完枢纽帧到最后一帧，开始处理枢纽帧之前的帧
 	//4: solve pnp l-1; triangulate l-1 ----- l
 	//             l-2              l-2 ----- l
@@ -294,6 +310,7 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 	// Step 5 求出了所有的位姿和3d点之后，进行一个视觉slam的global BA
 	// 可能需要介绍一下ceres  http://ceres-solver.org/
 	ceres::Problem problem;
+	// 设置更新方式，不同的表示的更新方式是不同的
 	ceres::LocalParameterization* local_parameterization = new ceres::QuaternionParameterization();
 	//cout << " begin full BA " << endl;
 	for (int i = 0; i < frame_num; i++)
@@ -341,10 +358,11 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 	ceres::Solver::Options options;
 	options.linear_solver_type = ceres::DENSE_SCHUR;
 	//options.minimizer_progress_to_stdout = true;
-	options.max_solver_time_in_seconds = 0.2;
+	options.max_solver_time_in_seconds = 0.2;  // 最大求解时间
 	ceres::Solver::Summary summary;
 	ceres::Solve(options, &problem, &summary);
 	//std::cout << summary.BriefReport() << "\n";
+	// 收敛或者损失在阈值范围内
 	if (summary.termination_type == ceres::CONVERGENCE || summary.final_cost < 5e-03)
 	{
 		//cout << "vision only BA converge" << endl;
@@ -371,6 +389,7 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 		T[i] = -1 * (q[i] * Vector3d(c_translation[i][0], c_translation[i][1], c_translation[i][2]));
 		//cout << "final  t" << " i " << i <<"  " << T[i](0) <<"  "<< T[i](1) <<"  "<< T[i](2) << endl;
 	}
+	// 存储地图点的坐标
 	for (int i = 0; i < (int)sfm_f.size(); i++)
 	{
 		if(sfm_f[i].state)

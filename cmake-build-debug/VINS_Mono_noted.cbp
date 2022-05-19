@@ -1,0 +1,442 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CodeBlocks_project_file>
+	<FileVersion major="1" minor="6"/>
+	<Project>
+		<Option title="VINS_Mono_noted"/>
+		<Option makefile_is_custom="1"/>
+		<Option compiler="gcc"/>
+		<Option virtualFolders="CMake Files\;"/>
+		<Build>
+			<Target title="all">
+				<Option working_dir="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug"/>
+				<Option type="4"/>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 all"/>
+					<CompileFile command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+			<Target title="rebuild_cache">
+				<Option working_dir="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug"/>
+				<Option type="4"/>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 rebuild_cache"/>
+					<CompileFile command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+			<Target title="edit_cache">
+				<Option working_dir="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug"/>
+				<Option type="4"/>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 edit_cache"/>
+					<CompileFile command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+			<Target title="VINS_Mono_noted">
+				<Option output="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/VINS_Mono_noted" prefix_auto="0" extension_auto="0"/>
+				<Option working_dir="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug"/>
+				<Option object_output="./"/>
+				<Option type="1"/>
+				<Option compiler="gcc"/>
+				<Compiler>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/calib"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/camera_models"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/chessboard"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/gpl"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/sparse_graph"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/feature_tracker/src"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DBoW"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DUtils"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DVision"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/utility"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/factor"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/initial"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/utility"/>
+					<Add directory="/usr/include/c++/7"/>
+					<Add directory="/usr/include/x86_64-linux-gnu/c++/7"/>
+					<Add directory="/usr/include/c++/7/backward"/>
+					<Add directory="/usr/lib/gcc/x86_64-linux-gnu/7/include"/>
+					<Add directory="/usr/local/include"/>
+					<Add directory="/usr/lib/gcc/x86_64-linux-gnu/7/include-fixed"/>
+					<Add directory="/usr/include/x86_64-linux-gnu"/>
+					<Add directory="/usr/include"/>
+				</Compiler>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 VINS_Mono_noted"/>
+					<CompileFile command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+			<Target title="VINS_Mono_noted/fast">
+				<Option output="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/VINS_Mono_noted" prefix_auto="0" extension_auto="0"/>
+				<Option working_dir="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug"/>
+				<Option object_output="./"/>
+				<Option type="1"/>
+				<Option compiler="gcc"/>
+				<Compiler>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/calib"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/camera_models"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/chessboard"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/gpl"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/sparse_graph"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/feature_tracker/src"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DBoW"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DUtils"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DVision"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/utility"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/factor"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/initial"/>
+					<Add directory="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/utility"/>
+					<Add directory="/usr/include/c++/7"/>
+					<Add directory="/usr/include/x86_64-linux-gnu/c++/7"/>
+					<Add directory="/usr/include/c++/7/backward"/>
+					<Add directory="/usr/lib/gcc/x86_64-linux-gnu/7/include"/>
+					<Add directory="/usr/local/include"/>
+					<Add directory="/usr/lib/gcc/x86_64-linux-gnu/7/include-fixed"/>
+					<Add directory="/usr/include/x86_64-linux-gnu"/>
+					<Add directory="/usr/include"/>
+				</Compiler>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 VINS_Mono_noted/fast"/>
+					<CompileFile command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j16 -f &quot;/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/cmake-build-debug/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+		</Build>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/ar_demo/src/ar_demo_node.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/benchmark_publisher/src/benchmark_publisher_node.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/calib/CameraCalibration.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/camera_models/Camera.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/camera_models/CameraFactory.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/camera_models/CataCamera.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/camera_models/CostFunctionFactory.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/camera_models/EquidistantCamera.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/camera_models/PinholeCamera.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/camera_models/ScaramuzzaCamera.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/chessboard/Chessboard.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/chessboard/ChessboardCorner.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/chessboard/ChessboardQuad.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/chessboard/Spline.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/gpl/EigenQuaternionParameterization.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/gpl/EigenUtils.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/gpl/gpl.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/include/camodocal/sparse_graph/Transform.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/src/calib/CameraCalibration.cc">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/src/camera_models/Camera.cc">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/src/camera_models/CameraFactory.cc">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/src/camera_models/CataCamera.cc">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/src/camera_models/CostFunctionFactory.cc">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/src/camera_models/EquidistantCamera.cc">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/src/camera_models/PinholeCamera.cc">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/src/camera_models/ScaramuzzaCamera.cc">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/src/chessboard/Chessboard.cc">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/src/gpl/EigenQuaternionParameterization.cc">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/src/gpl/gpl.cc">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/src/intrinsic_calib.cc">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/camera_model/src/sparse_graph/Transform.cc">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/feature_tracker/src/feature_tracker.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/feature_tracker/src/feature_tracker.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/feature_tracker/src/feature_tracker_node.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/feature_tracker/src/parameters.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/feature_tracker/src/parameters.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/feature_tracker/src/tic_toc.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DBoW/BowVector.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DBoW/BowVector.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DBoW/DBoW2.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DBoW/FBrief.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DBoW/FBrief.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DBoW/FClass.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DBoW/FeatureVector.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DBoW/FeatureVector.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DBoW/QueryResults.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DBoW/QueryResults.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DBoW/ScoringObject.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DBoW/ScoringObject.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DBoW/TemplatedDatabase.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DBoW/TemplatedVocabulary.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DUtils/DException.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DUtils/DUtils.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DUtils/Random.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DUtils/Random.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DUtils/Timestamp.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DUtils/Timestamp.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DVision/BRIEF.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DVision/BRIEF.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/DVision/DVision.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/VocabularyBinary.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/ThirdParty/VocabularyBinary.hpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/keyframe.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/keyframe.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/parameters.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/pose_graph.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/pose_graph.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/pose_graph_node.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/utility/CameraPoseVisualization.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/utility/CameraPoseVisualization.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/utility/tic_toc.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/utility/utility.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/pose_graph/src/utility/utility.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/estimator.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/estimator.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/estimator_node.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/factor/imu_factor.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/factor/integration_base.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/factor/marginalization_factor.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/factor/marginalization_factor.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/factor/pose_local_parameterization.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/factor/pose_local_parameterization.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/factor/projection_factor.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/factor/projection_factor.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/factor/projection_td_factor.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/factor/projection_td_factor.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/feature_manager.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/feature_manager.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/initial/initial_aligment.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/initial/initial_alignment.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/initial/initial_ex_rotation.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/initial/initial_ex_rotation.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/initial/initial_sfm.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/initial/initial_sfm.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/initial/solve_5pts.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/initial/solve_5pts.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/parameters.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/parameters.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/utility/CameraPoseVisualization.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/utility/CameraPoseVisualization.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/utility/tic_toc.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/utility/utility.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/utility/utility.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/utility/visualization.cpp">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/vins_estimator/src/utility/visualization.h">
+			<Option target="VINS_Mono_noted"/>
+		</Unit>
+		<Unit filename="/home/xiongchao/studying/SLAM/vins-mono/code/VINS-Mono-noted/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\"/>
+		</Unit>
+	</Project>
+</CodeBlocks_project_file>

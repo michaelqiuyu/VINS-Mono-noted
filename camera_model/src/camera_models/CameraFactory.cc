@@ -94,8 +94,7 @@ CameraFactory::generateCamera(Camera::ModelType modelType,
  * 这里根据配置文件得到相机参数，我们只考虑针孔相机，得到畸变和内参，同时返回带有参数信息的类CameraPtr
  */
 
-CameraPtr
-CameraFactory::generateCameraFromYamlFile(const std::string& filename)
+CameraPtr CameraFactory::generateCameraFromYamlFile(const std::string& filename)
 {
     cv::FileStorage fs(filename, cv::FileStorage::READ);
 

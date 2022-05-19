@@ -12,7 +12,7 @@
 class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>
 {
   public:
-    IMUFactor() = delete;
+    IMUFactor() = delete;  // 使用“=delete”来将不想要的函数定义成删除的函数，我们将不能以任何方式使用它们
     IMUFactor(IntegrationBase* _pre_integration):pre_integration(_pre_integration)
     {
     }
@@ -72,9 +72,14 @@ class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>
         residual = pre_integration->evaluate(Pi, Qi, Vi, Bai, Bgi,
                                             Pj, Qj, Vj, Baj, Bgj);
         // 因为ceres没有g2o设置信息矩阵的接口，因此置信度直接乘在残差上，这里通过LLT分解，相当于将信息矩阵开根号
+        // 执行LU分解中的乔累斯基分解，并获取LT矩阵（matrixL为获取L矩阵）
         Eigen::Matrix<double, 15, 15> sqrt_info = Eigen::LLT<Eigen::Matrix<double, 15, 15>>(pre_integration->covariance.inverse()).matrixL().transpose();
         //sqrt_info.setIdentity();
         // 这就是带有信息矩阵的残差
+        /**
+         * H = LLT
+         * (LT * e)T * (LT * e) = eT * L * LT * e = eT * H * e
+         */
         residual = sqrt_info * residual;
         // 关于雅克比的计算手动推导一下
         if (jacobians)
@@ -88,6 +93,7 @@ class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>
             Eigen::Matrix3d dv_dba = pre_integration->jacobian.template block<3, 3>(O_V, O_BA);
             Eigen::Matrix3d dv_dbg = pre_integration->jacobian.template block<3, 3>(O_V, O_BG);
 
+            // 对雅克比矩阵中最大值和最小值的检验
             if (pre_integration->jacobian.maxCoeff() > 1e8 || pre_integration->jacobian.minCoeff() < -1e8)
             {
                 ROS_WARN("numerical unstable in preintegration");
@@ -95,10 +101,18 @@ class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>
 ///                ROS_BREAK();
             }
 
+            // e对四个参数求导
             if (jacobians[0])
             {
                 Eigen::Map<Eigen::Matrix<double, 15, 7, Eigen::RowMajor>> jacobian_pose_i(jacobians[0]);
                 jacobian_pose_i.setZero();
+
+                /**
+                 * notes:
+                 *      1. 对四元数扰动的形式
+                 *      2. 不用过分专注于求导的形式，因为只需要求导和更新一致即可
+                 *      3. 求导过程中可能使用了近似，需要注意近似的精度，如果精度太差，求导也就失去了意义
+                 */
 
                 jacobian_pose_i.block<3, 3>(O_P, O_P) = -Qi.inverse().toRotationMatrix();
                 jacobian_pose_i.block<3, 3>(O_P, O_R) = Utility::skewSymmetric(Qi.inverse() * (0.5 * G * sum_dt * sum_dt + Pj - Pi - Vi * sum_dt));

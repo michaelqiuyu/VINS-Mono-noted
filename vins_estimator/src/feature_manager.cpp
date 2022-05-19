@@ -67,7 +67,7 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
     for (auto &id_pts : image)
     {
         // 用特征点信息构造一个对象
-        FeaturePerFrame f_per_fra(id_pts.second[0].second, td);
+        FeaturePerFrame f_per_fra(id_pts.second[0].second, td);  // 此处的0代表第一个相机
 
         int feature_id = id_pts.first;
         // 在已有的id中寻找是否是有相同的特征点
@@ -96,7 +96,10 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
     for (auto &it_per_id : feature)
     {
         // 计算的实际上是frame_count-1,也就是前一帧是否为关键帧
-        // 因此起始帧至少得是frame_count - 2,同时至少覆盖到frame_count - 1帧
+        // 因此起始帧至少得是frame_count - 2,同时至少覆盖到frame_count - 1帧（也就是被它看到）
+        /**
+         * notes: 实际上就是某个特征点能够同时被倒数第三帧和倒数第二帧看到
+         */
         if (it_per_id.start_frame <= frame_count - 2 &&
             it_per_id.start_frame + int(it_per_id.feature_per_frame.size()) - 1 >= frame_count - 1)
         {
@@ -424,10 +427,11 @@ void FeatureManager::removeFront(int frame_count)
     }
 }
 
+// xc's todo: 此处使用的是归一化的相机坐标系的坐标，如果按照针孔模型的话，要达到10的间隔，说明像素间隔有几千了，是否在前面做了什么处理？
 double FeatureManager::compensatedParallax2(const FeaturePerId &it_per_id, int frame_count)
 {
     //check the second last frame is keyframe or not
-    //parallax betwwen seconde last frame and third last frame
+    //parallax between second last frame and third last frame
     // 找到相邻两帧
     const FeaturePerFrame &frame_i = it_per_id.feature_per_frame[frame_count - 2 - it_per_id.start_frame];
     const FeaturePerFrame &frame_j = it_per_id.feature_per_frame[frame_count - 1 - it_per_id.start_frame];

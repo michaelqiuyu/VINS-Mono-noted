@@ -50,7 +50,7 @@ bool ProjectionFactor::Evaluate(double const *const *parameters, double *residua
     residual = (pts_camera_j / dep_j).head<2>() - pts_j.head<2>();  // 重投影误差
 #endif
 
-    residual = sqrt_info * residual;    // 误差乘上信息矩阵
+    residual = sqrt_info * residual;    // 误差乘上信息矩阵，1.5个像素
 
     if (jacobians)
     {

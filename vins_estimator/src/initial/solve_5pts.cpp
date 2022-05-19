@@ -44,6 +44,7 @@ namespace cv {
 
         if (points1.channels() > 1)
         {
+            // 将points变成N * 2的矩阵
             points1 = points1.reshape(1, npoints);
             points2 = points2.reshape(1, npoints);
         }
@@ -53,6 +54,7 @@ namespace cv {
         double cx = cameraMatrix.at<double>(0,2);
         double cy = cameraMatrix.at<double>(1,2);
 
+        // 转为归一化相机系坐标
         points1.col(0) = (points1.col(0) - cx) / fx;
         points2.col(0) = (points2.col(0) - cx) / fx;
         points1.col(1) = (points1.col(1) - cy) / fy;
@@ -76,13 +78,14 @@ namespace cv {
         // there depth may vary between postive and negtive.
         double dist = 50.0;
         Mat Q;
-        triangulatePoints(P0, P1, points1, points2, Q);
-        Mat mask1 = Q.row(2).mul(Q.row(3)) > 0;
+        triangulatePoints(P0, P1, points1, points2, Q);  // DLT三角化
+        Mat mask1 = Q.row(2).mul(Q.row(3)) > 0;  // 相机1下的深度值为正
         Q.row(0) /= Q.row(3);
         Q.row(1) /= Q.row(3);
         Q.row(2) /= Q.row(3);
         Q.row(3) /= Q.row(3);
-        mask1 = (Q.row(2) < dist) & mask1;
+        mask1 = (Q.row(2) < dist) & mask1;  // 相机1下的深度值满足阈值条件和深度值为正条件
+        // 相机2下的深度值满足阈值条件和深度值为正条件
         Q = P1 * Q;
         mask1 = (Q.row(2) > 0) & mask1;
         mask1 = (Q.row(2) < dist) & mask1;
@@ -125,6 +128,8 @@ namespace cv {
         mask3 = mask3.t();
         mask4 = mask4.t();
 
+        // E仅使用了mask为1对应的点，因此这里需要做与运算
+
         // If _mask is given, then use it to filter outliers.
         if (!_mask.empty())
         {
@@ -135,6 +140,7 @@ namespace cv {
             bitwise_and(mask, mask3, mask3);
             bitwise_and(mask, mask4, mask4);
         }
+        // needed检测矩阵是否需要被计算，有时候传进去的参不是空就不需要计算
         if (_mask.empty() && _mask.needed())
         {
             _mask.create(mask1.size(), CV_8U);
@@ -144,6 +150,7 @@ namespace cv {
         _R.create(3, 3, R1.type());
         _t.create(3, 1, t.type());
 
+        // 将对应的内点数目最多的那组R, t返回
         int good1 = countNonZero(mask1);
         int good2 = countNonZero(mask2);
         int good3 = countNonZero(mask3);

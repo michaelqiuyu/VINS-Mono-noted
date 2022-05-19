@@ -104,7 +104,7 @@ void readParameters(ros::NodeHandle &n)
         cv::cv2eigen(cv_R, eigen_R);
         cv::cv2eigen(cv_T, eigen_T);
         Eigen::Quaterniond Q(eigen_R);
-        eigen_R = Q.normalized();
+        eigen_R = Q.normalized();  // 四元数单位化，防止eigen_R不是正交阵
         RIC.push_back(eigen_R);
         TIC.push_back(eigen_T);
         ROS_INFO_STREAM("Extrinsic_R : " << std::endl << RIC[0]);
@@ -113,17 +113,23 @@ void readParameters(ros::NodeHandle &n)
     } 
 
     INIT_DEPTH = 5.0;
-    BIAS_ACC_THRESHOLD = 0.1;
+    BIAS_ACC_THRESHOLD = 0.1;  // 特征点深度的默认值
     BIAS_GYR_THRESHOLD = 0.1;
 
     // 传感器时间延时相关
-    TD = fsSettings["td"];
-    ESTIMATE_TD = fsSettings["estimate_td"];
+    TD = fsSettings["td"];  // image + TD = IMU
+    ESTIMATE_TD = fsSettings["estimate_td"];  // 是否在线估计相机与IMU之间的时间延迟
     if (ESTIMATE_TD)
         ROS_INFO_STREAM("Unsynchronized sensors, online estimate time offset, initial td: " << TD);
     else
         ROS_INFO_STREAM("Synchronized sensors, fix time offset: " << TD);
 
+    /**
+     * 快门：https://baike.baidu.com/item/%E5%BF%AB%E9%97%A8/82245?fr=aladdin
+     * 曝光时间：https://baike.baidu.com/item/%E6%9B%9D%E5%85%89%E6%97%B6%E9%97%B4/485425?fr=aladdin
+     * rolling shutter vs global shutter: https://blog.csdn.net/danmeng8068/article/details/80726514
+     *
+     */
     ROLLING_SHUTTER = fsSettings["rolling_shutter"];
     if (ROLLING_SHUTTER)
     {

@@ -114,7 +114,7 @@ void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
             shift_r = Utility::ypr2R(Vector3d(shift_yaw, 0, 0));
             shift_t = w_P_cur - w_R_cur * vio_R_cur.transpose() * vio_P_cur; 
             // shift vio pose of whole sequence to the world frame
-            // 如果这两个不是同一个sequence，并且当前sequence没有跟之前合并
+            // 如果这两个不是同一个sequence，并且当前sequence没有跟之前合并，多地图合并
             if (old_kf->sequence != cur_kf->sequence && sequence_loop[cur_kf->sequence] == 0)
             {  
                 w_r_vio = shift_r;
@@ -531,7 +531,7 @@ void PoseGraph::optimize4DoF()
                     // 计算T_i-j_w * T_w_i = T_i-j_i
                     Vector3d euler_conncected = Utility::R2ypr(q_array[i-j].toRotationMatrix());
                     Vector3d relative_t(t_array[i][0] - t_array[i-j][0], t_array[i][1] - t_array[i-j][1], t_array[i][2] - t_array[i-j][2]);
-                    relative_t = q_array[i-j].inverse() * relative_t;
+                    relative_t = q_array[i-j].inverse() * relative_t;  // 统一到第i帧
                     double relative_yaw = euler_array[i][0] - euler_array[i-j][0];
                     ceres::CostFunction* cost_function = FourDOFError::Create( relative_t.x(), relative_t.y(), relative_t.z(),
                                                    relative_yaw, euler_conncected.y(), euler_conncected.z());
@@ -612,6 +612,11 @@ void PoseGraph::optimize4DoF()
 
             it++;
             // 遍历当前帧之后的所有位姿，根据算得的位姿差进行调整
+            /**
+             * notes:
+             *      1. 这里主要是多线程运行，其他线程还在产生关键帧
+             *      2. 需要留意的是，其他线程产生的关键帧不能太多（距离当前关键帧不能太久），否则依然会有漂移
+             */
             for (; it != keyframelist.end(); it++)
             {
                 Vector3d P;

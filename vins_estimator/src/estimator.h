@@ -106,6 +106,12 @@ class Estimator
     double initial_timestamp;
 
 
+    /**
+     * para_Pose: 平移是3，姿态是4（四元数）
+     * para_SpeedBias: 速度和零偏，总计为9
+     * para_Feature: 维护逆深度，维度为1
+     * para_Ex_Pose：外参，维度同para_Pose
+     */
     double para_Pose[WINDOW_SIZE + 1][SIZE_POSE];
     double para_SpeedBias[WINDOW_SIZE + 1][SIZE_SPEEDBIAS];
     double para_Feature[NUM_OF_F][SIZE_FEATURE];

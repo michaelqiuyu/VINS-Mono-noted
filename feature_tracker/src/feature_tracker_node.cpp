@@ -58,6 +58,12 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         PUB_THIS_FRAME = true;
         // reset the frequency control
         // 这段时间的频率和预设频率十分接近，就认为这段时间很棒，重启一下，避免delta t太大
+        /**
+         * author: xiongchao
+         * 如果图片的时间戳是等间隔的话，只有在图片频率与FREQ比较接近的时候，才会产生轻微的影响，如图片帧率为30，FREQ为25的时候，有第101张图片进入这个判断，会比
+         *
+         * 这里的处理只是为了使得pub_count对时间的变化更加敏感
+         */
         if (abs(1.0 * pub_count / (img_msg->header.stamp.toSec() - first_image_time) - FREQ) < 0.01 * FREQ)
         {
             first_image_time = img_msg->header.stamp.toSec();
@@ -68,6 +74,8 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         PUB_THIS_FRAME = false;
 
     // 即使不发布也是正常做光流追踪的！光流对图像的变化要求尽可能小
+    // 光流需要图像的变动尽可能小
+
 
     cv_bridge::CvImageConstPtr ptr;
     // 把ros message转成cv::Mat
@@ -217,7 +225,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "feature_tracker");   // ros节点初始化
-    ros::NodeHandle n("~"); // 声明一个句柄，～代表这个节点的命名空间
+    ros::NodeHandle n("~"); // 声明一个句柄，～代表这个节点的命名空间；命名空间为/node_namespace/node_name
     ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info);    // 设置ros log级别
     readParameters(n); // 读取配置文件
 
@@ -231,8 +239,8 @@ int main(int argc, char **argv)
             trackerData[i].fisheye_mask = cv::imread(FISHEYE_MASK, 0);
             if(!trackerData[i].fisheye_mask.data)
             {
-                ROS_INFO("load mask fail");
-                ROS_BREAK();
+                ROS_INFO("load mask fail");  // 以INFO等级按printf格式输出的日志信息.
+                ROS_BREAK();  // 用于中断程序并输出本句所在文件/行数.
             }
             else
                 ROS_INFO("load mask success");

@@ -28,6 +28,12 @@ struct ReprojectionError3D
 		:observed_u(observed_u), observed_v(observed_v)
 		{}
 
+    /**
+     * notes:
+     *      1. 最后一维必须是残差结果
+     *      2. 参数与AddResidualBlock函数中kernel function之后的参数对应
+     *
+     */
 	template <typename T>
 	bool operator()(const T* const camera_R, const T* const camera_T, const T* point, T* residuals) const
 	{
@@ -46,6 +52,13 @@ struct ReprojectionError3D
 	static ceres::CostFunction* Create(const double observed_x,
 	                                   const double observed_y) 
 	{
+	    /**
+	     * notes:
+	     *      2-residuals dimension
+	     *      4-rotation dimension
+	     *      3-translation dimension
+	     *      3-point dimension
+	     */
 	  return (new ceres::AutoDiffCostFunction<
 	          ReprojectionError3D, 2, 4, 3, 3>(
 	          	new ReprojectionError3D(observed_x,observed_y)));

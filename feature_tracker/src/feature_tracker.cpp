@@ -58,6 +58,9 @@ void FeatureTracker::setMask()
     ids.clear();
     track_cnt.clear();
 
+    /*
+     * 这里的均匀化比较简单，先对特征点的质量进行排序，然后画圈进行均匀化
+     */
     for (auto &it : cnt_pts_id)
     {
         if (mask.at<uchar>(it.second.first) == 255)
@@ -67,6 +70,10 @@ void FeatureTracker::setMask()
             ids.push_back(it.second.second);
             track_cnt.push_back(it.first);
             // opencv函数，把周围一个圆内全部置0,这个区域不允许别的特征点存在，避免特征点过于集中
+            /*
+             * author: xiongchao
+             * 一旦画圆之后，这个院内的mask的值就变了，就不会通过这个if判断了
+             */
             cv::circle(mask, it.second.first, MIN_DIST, 0, -1);
         }
     }
@@ -134,6 +141,10 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
 
         for (int i = 0; i < int(forw_pts.size()); i++)
             // Step 2 通过图像边界剔除outlier
+            /*
+             * author: xiongchao
+             * 这里的范围是1 <= x <= row - 1; 1 <= y <= col - 1
+             */
             if (status[i] && !inBorder(forw_pts[i]))    // 追踪状态好检查在不在图像范围
                 status[i] = 0;
         reduceVector(prev_pts, status); // 没用到
@@ -148,17 +159,26 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
     for (auto &n : track_cnt)
         n++;
 
+    /**
+     * author: xiongchao
+     * 如果不发布的话，我们就仅仅只是做光流跟踪和去畸变操作
+     *
+     */
     if (PUB_THIS_FRAME)
     {
         // Step 3 通过对级约束来剔除outlier
         rejectWithF();
         ROS_DEBUG("set mask begins");
         TicToc t_m;
-        setMask();
+        setMask();  // 均匀化
         ROS_DEBUG("set mask costs %fms", t_m.toc());
 
         ROS_DEBUG("detect feature begins");
         TicToc t_t;
+        /*
+         * author: xiongchao
+         * 新提的特征点的数目
+         */
         int n_max_cnt = MAX_CNT - static_cast<int>(forw_pts.size());
         if (n_max_cnt > 0)
         {
@@ -170,6 +190,14 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
                 cout << "wrong size " << endl;
             // 只有发布才可以提取更多特征点，同时避免提的点进mask
             // 会不会这些点集中？会，不过没关系，他们下一次作为老将就得接受均匀化的洗礼
+            /**
+             * author: xiongchao
+             * 第一帧的特征提取就是这里，第一次提取的特征没有经过均匀化，但对后续跟踪到的特征点会进行均匀化
+             *
+             * MIN_DIST用于提取的特征点之间的最小间距（像素单位）
+             *
+             * 想法：这里的逻辑是：先提特征点→光流跟踪→均匀化，需要注意的是提特征点的接口已经有均匀化的操作了，不然的话逻辑就会有问题，因为如果提的特征点太密集，可能在均匀化的时候删掉了大量的特征点
+             */
             cv::goodFeaturesToTrack(forw_img, n_pts, MAX_CNT - forw_pts.size(), 0.01, MIN_DIST, mask);
         }
         else
@@ -222,6 +250,11 @@ void FeatureTracker::rejectWithF()
 
         vector<uchar> status;
         // opencv接口计算本质矩阵，某种意义也是一种对级约束的outlier剔除
+        /**
+         * author: xiongchao
+         *
+         * F_THRESHOLD：点到极限的距离，这里的阈值的设定是否应该参考ORB-SLAM3中依赖卡方分布检验的结果
+         */
         cv::findFundamentalMat(un_cur_pts, un_forw_pts, cv::FM_RANSAC, F_THRESHOLD, 0.99, status);
         int size_a = cur_pts.size();
         reduceVector(prev_pts, status);
@@ -299,6 +332,10 @@ void FeatureTracker::showUndistortion(const string &name)
 }
 
 // 当前帧所有点统一去畸变，同时计算特征点速度，用来后续时间戳标定
+/**
+ * author: xiongchao
+ * 需要注意的是，在桶形畸变的情形下，如果更新后的点与原始点不在同一个1/4图像内，这个去畸变算法就会发散，但是这种情形一般不会出现
+ */
 void FeatureTracker::undistortedPoints()
 {
     cur_un_pts.clear();
@@ -327,6 +364,13 @@ void FeatureTracker::undistortedPoints()
                 std::map<int, cv::Point2f>::iterator it;
                 it = prev_un_pts_map.find(ids[i]);
                 // 找到同一个特征点
+                /**
+                 * author: xiongchao
+                 * ids保存的是从第一帧开始能够跟踪到的特征点的id以及后面新加特征点的id，可能有的id从第一帧开始一直被跟踪到，
+                 * 导致id一直没变，但是prev_un_pts_map在一直更新，因此此处的逻辑是没有问题的
+                 *
+                 * 思考：ids[i] != -1是否意味着这个特征点被跟踪到了，因此it != prev_un_pts_map.end()一定成立
+                 */
                 if (it != prev_un_pts_map.end())
                 {
                     double v_x = (cur_un_pts[i].x - it->second.x) / dt;
@@ -338,6 +382,7 @@ void FeatureTracker::undistortedPoints()
                     pts_velocity.push_back(cv::Point2f(0, 0));
             }
             else
+
             {
                 pts_velocity.push_back(cv::Point2f(0, 0));
             }

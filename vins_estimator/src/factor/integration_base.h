@@ -9,7 +9,17 @@ using namespace Eigen;
 class IntegrationBase
 {
   public:
+    /**
+     * 参考网址：https://blog.csdn.net/whahu1989/article/details/90648536
+     *
+     * notes: C++11中，当我们定义一个类的成员函数时，如果后面使用"=delete"去修饰，那么就表示这个函数被定义为deleted，也就意味着这个成员函数不能再被调用，否则就会出错
+     *
+     */
     IntegrationBase() = delete;
+    /**
+     * jacobian: 某一时刻的预积分误差对起始时刻预积分误差的雅克比，用来求解预积分对零偏的导数
+     * covariance: 某时刻的预积分误差的协方差矩阵
+     */
     IntegrationBase(const Eigen::Vector3d &_acc_0, const Eigen::Vector3d &_gyr_0,
                     const Eigen::Vector3d &_linearized_ba, const Eigen::Vector3d &_linearized_bg)
         : acc_0{_acc_0}, gyr_0{_gyr_0}, linearized_acc{_acc_0}, linearized_gyr{_gyr_0},
@@ -78,6 +88,9 @@ class IntegrationBase
         Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
         result_delta_p = delta_p + delta_v * _dt + 0.5 * un_acc * _dt * _dt;
         result_delta_v = delta_v + un_acc * _dt;
+        /**
+         * notes: 假设零偏不发生改变
+         */
         result_linearized_ba = linearized_ba;
         result_linearized_bg = linearized_bg;         
         // 随后更新方差矩阵及雅克比
@@ -98,6 +111,9 @@ class IntegrationBase
                 a_1_x(2), 0, -a_1_x(0),
                 -a_1_x(1), a_1_x(0), 0;
 
+            /**
+             * notes: 详见vins-mono论文上的推导中的F矩阵
+             */
             MatrixXd F = MatrixXd::Zero(15, 15);
             F.block<3, 3>(0, 0) = Matrix3d::Identity();
             F.block<3, 3>(0, 3) = -0.25 * delta_q.toRotationMatrix() * R_a_0_x * _dt * _dt + 
@@ -132,6 +148,11 @@ class IntegrationBase
 
             //step_jacobian = F;
             //step_V = V;
+            /**
+             * notes:
+             *      1. F矩阵用于递推求解预计分量关于零偏的导数
+             *      2. 协方差矩阵用于设定权重
+             */
             jacobian = F * jacobian;
             covariance = F * covariance * F.transpose() + V * noise * V.transpose();
         }
@@ -159,6 +180,9 @@ class IntegrationBase
         delta_p = result_delta_p;
         delta_q = result_delta_q;
         delta_v = result_delta_v;
+        /**
+         * notes: 实际上零偏没有发生修改
+         */
         linearized_ba = result_linearized_ba;
         linearized_bg = result_linearized_bg;
         delta_q.normalize();
@@ -185,13 +209,16 @@ class IntegrationBase
         Eigen::Vector3d dba = Bai - linearized_ba;
         Eigen::Vector3d dbg = Bgi - linearized_bg;
 
+        // 这里描述的是IMU的预积分各量对零偏的变化的更新方式
         Eigen::Quaterniond corrected_delta_q = delta_q * Utility::deltaQ(dq_dbg * dbg);
         Eigen::Vector3d corrected_delta_v = delta_v + dv_dba * dba + dv_dbg * dbg;
         Eigen::Vector3d corrected_delta_p = delta_p + dp_dba * dba + dp_dbg * dbg;
 
+        // 视觉计算结果 - IMU计算结果
         residuals.block<3, 1>(O_P, 0) = Qi.inverse() * (0.5 * G * sum_dt * sum_dt + Pj - Pi - Vi * sum_dt) - corrected_delta_p;
         residuals.block<3, 1>(O_R, 0) = 2 * (corrected_delta_q.inverse() * (Qi.inverse() * Qj)).vec();
         residuals.block<3, 1>(O_V, 0) = Qi.inverse() * (G * sum_dt + Vj - Vi) - corrected_delta_v;
+        // 理论上，连续两帧之间的零偏不能偏差太大
         residuals.block<3, 1>(O_BA, 0) = Baj - Bai;
         residuals.block<3, 1>(O_BG, 0) = Bgj - Bgi;
         return residuals;

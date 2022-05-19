@@ -12,6 +12,10 @@
 class Utility
 {
   public:
+
+    /**
+     * notes: 近似计算，适用于旋转角度足够小的时候
+     */
     template <typename Derived>
     static Eigen::Quaternion<typename Derived::Scalar> deltaQ(const Eigen::MatrixBase<Derived> &theta)
     {

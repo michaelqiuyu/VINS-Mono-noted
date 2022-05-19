@@ -67,11 +67,17 @@ void predict(const sensor_msgs::ImuConstPtr &imu_msg)
     double rz = imu_msg->angular_velocity.z;
     Eigen::Vector3d angular_velocity{rx, ry, rz};
     // 上一时刻世界坐标系下加速度值
+    /**
+     * notes: 此处使用的是g=9.8，因此与加速度计建模推导中有所不同；如果给定的是-9.8，那么就与加速度计建模推导一致了
+     */
     Eigen::Vector3d un_acc_0 = tmp_Q * (acc_0 - tmp_Ba) - estimator.g;
 
     // 中值陀螺仪的结果
     Eigen::Vector3d un_gyr = 0.5 * (gyr_0 + angular_velocity) - tmp_Bg;
     // 更新姿态
+    /**
+     * notes: 从理论上讲，tmp_Q并不是单位四元数，这是否会对后面产生影响
+     */
     tmp_Q = tmp_Q * Utility::deltaQ(un_gyr * dt);
     // 当前时刻世界坐标系下的加速度值
     Eigen::Vector3d un_acc_1 = tmp_Q * (linear_acceleration - tmp_Ba) - estimator.g;
@@ -105,6 +111,9 @@ void update()
 }
 
 // 获得匹配好的图像imu组
+/**
+ * notes: 直接一次性将数据对齐结束
+ */
 std::vector<std::pair<std::vector<sensor_msgs::ImuConstPtr>, sensor_msgs::PointCloudConstPtr>>
 getMeasurements()
 {
@@ -132,10 +141,19 @@ getMeasurements()
             feature_buf.pop();
             continue;
         }
+        /**
+         * notes: 为什么不判断imu_buf.front()->header.stamp.toSec() > feature_buf.front()->header.stamp.toSec() + estimator.td，此时依然是没有重叠区域产生的
+         */
         // 此时就保证了图像前一定有imu数据
         sensor_msgs::PointCloudConstPtr img_msg = feature_buf.front();
         feature_buf.pop();
         // 一般第一帧不会严格对齐，但是后面就都会对齐，当然第一帧也不会用到
+        /**
+         * IMU       ******************************
+         * IMG            *     *     *     *
+         *
+         * notes: 可能第一帧图像之前可能有非常多的IMU数据，实际上第一帧的数据不会使用
+         */
         std::vector<sensor_msgs::ImuConstPtr> IMUs;
         while (imu_buf.front()->header.stamp.toSec() < img_msg->header.stamp.toSec() + estimator.td)
         {
@@ -145,6 +163,9 @@ getMeasurements()
         // 保留图像时间戳后一个imu数据，但不会从buffer中扔掉
         // imu    *   *
         // image    *
+        /**
+         * notes: 此处主要是为了插值获取图像对应的IMU
+         */
         IMUs.emplace_back(imu_buf.front());
         if (IMUs.empty())
             ROS_WARN("no imu between two image");
@@ -167,11 +188,11 @@ void imu_callback(const sensor_msgs::ImuConstPtr &imu_msg)
         return;
     }
     last_imu_t = imu_msg->header.stamp.toSec();
-    // 讲一下线程锁 条件变量用法
+    // 关于线程锁和条件变量：https://www.jianshu.com/p/c1dfa1d40f53
     m_buf.lock();
     imu_buf.push(imu_msg);
     m_buf.unlock();
-    con.notify_one();
+    con.notify_one();  // 防止CPU占用过高
 
     last_imu_t = imu_msg->header.stamp.toSec();
 
@@ -289,6 +310,9 @@ void process()
                     ROS_ASSERT(dt_1 >= 0);
                     ROS_ASSERT(dt_2 >= 0);
                     ROS_ASSERT(dt_1 + dt_2 > 0);
+                    /**
+                     * notes: 时间越近，权重越大
+                     */
                     double w1 = dt_2 / (dt_1 + dt_2);
                     double w2 = dt_1 / (dt_1 + dt_2);
                     dx = w1 * dx + w2 * imu_msg->linear_acceleration.x;
@@ -350,6 +374,9 @@ void process()
                 ROS_ASSERT(z == 1); // 检查是不是归一化
                 Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
                 xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
+                /**
+                 * notes: 对于双目而言，同一个特征点可能左边出现一次，右边出现一次
+                 */
                 image[feature_id].emplace_back(camera_id,  xyz_uv_velocity);
             }
             estimator.processImage(image, img_msg->header);
