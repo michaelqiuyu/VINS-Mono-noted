@@ -36,7 +36,6 @@ bool InitialEXRotation::CalibrationExRotation(vector<pair<Vector3d, Vector3d>> c
      * notes:
      *      1. 从1开始因为至少两帧才有对极几何
      *      2. q_cb * q_bkbk+1 = q_ckck+1 * q_cb = q_ckbk+1
-     *
      */
     for (int i = 1; i <= frame_count; i++)
     {
