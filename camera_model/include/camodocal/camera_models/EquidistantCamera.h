@@ -160,6 +160,7 @@ T
 EquidistantCamera::r(T k2, T k3, T k4, T k5, T theta)
 {
     // k1 = 1
+    // theta_d = theta * (1 + k2 * theta^2 + k3 * theta^4 + k4 * theta^6 + k5 * theta^)
     return theta +
            k2 * theta * theta * theta +
            k3 * theta * theta * theta * theta * theta +
@@ -201,9 +202,20 @@ EquidistantCamera::spaceToPlane(const T* const params,
     T v0 = params[7];
 
     T len = sqrt(P_c[0] * P_c[0] + P_c[1] * P_c[1] + P_c[2] * P_c[2]);
-    T theta = acos(P_c[2] / len);
+    T theta = acos(P_c[2] / len);  // 求的是入射角theta
     T phi = atan2(P_c[1], P_c[0]);
 
+    /**
+     * 相机系下的三维点A与光心的连线与归一化相机系平面交于B1（对应r），经过畸变后与归一化相机系平面交于B2（对应theta_d）；有B1、B2和归一化平面的原点三点共线
+     *
+     * phi等价于归一化相机系坐标(x, y, 1)，有tan(phi) = x / y
+     * cos(phi) = x / r, sin(phi) = y / r
+     *
+     * xd, yd → theta_d
+     * xc, yx → r
+     *
+     * theta_d / r = xd / xc = yd / yc
+     */
     Eigen::Matrix<T,2,1> p_u = r(k2, k3, k4, k5, theta) * Eigen::Matrix<T,2,1>(cos(phi), sin(phi));
 
     p(0) = mu * p_u(0) + u0;

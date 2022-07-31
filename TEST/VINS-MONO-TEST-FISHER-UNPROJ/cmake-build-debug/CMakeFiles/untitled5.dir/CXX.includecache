@@ -1,0 +1,18 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/xiongchao/studying/PACKAGE/untitled5/main.cpp
+iostream
+-
+opencv2/core/persistence.hpp
+-
+Eigen/Core
+-
+eigen3/Eigen/Dense
+-
+

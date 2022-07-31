@@ -21,6 +21,8 @@ public:
         SCARAMUZZA
     };
 
+    // 在类里面新建一个类，注意使用的时候，需要使用Camera::Parameters
+    // Parameters的通用参数有类型、名字、宽、高；至于内参则每个相机可能不同
     class Parameters
     {
     public:

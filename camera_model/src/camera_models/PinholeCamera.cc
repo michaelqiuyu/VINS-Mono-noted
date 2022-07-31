@@ -182,6 +182,7 @@ PinholeCamera::Parameters::readFromYamlFile(const std::string& filename)
     return true;
 }
 
+// 用于标定结果的输出
 void
 PinholeCamera::Parameters::writeToYamlFile(const std::string& filename) const
 {
@@ -341,6 +342,7 @@ PinholeCamera::imageHeight(void) const
     return mParameters.imageHeight();
 }
 
+// 用于标定内参
 void
 PinholeCamera::estimateIntrinsics(const cv::Size& boardSize,
                                   const std::vector< std::vector<cv::Point3f> >& objectPoints,
@@ -435,8 +437,9 @@ PinholeCamera::estimateIntrinsics(const cv::Size& boardSize,
 void
 PinholeCamera::liftSphere(const Eigen::Vector2d& p, Eigen::Vector3d& P) const
 {
-    liftProjective(p, P);
+    liftProjective(p, P);  // 获得去畸变的归一化相机系坐标
 
+    // xc's todo: 映射到一个单位球上面的原因是什么？
     P.normalize();
 }
 
@@ -536,6 +539,7 @@ PinholeCamera::liftProjective(const Eigen::Vector2d& p, Eigen::Vector3d& P) cons
 void
 PinholeCamera::spaceToPlane(const Eigen::Vector3d& P, Eigen::Vector2d& p) const
 {
+    // 对相机系下的三维坐标进行投影
     Eigen::Vector2d p_u, p_d;
 
     // Project points to the normalised plane
@@ -549,7 +553,7 @@ PinholeCamera::spaceToPlane(const Eigen::Vector3d& P, Eigen::Vector2d& p) const
     {
         // Apply distortion
         Eigen::Vector2d d_u;
-        distortion(p_u, d_u);
+        distortion(p_u, d_u);  // 加上畸变
         p_d = p_u + d_u;
     }
 
@@ -634,6 +638,7 @@ PinholeCamera::spaceToPlane(const Eigen::Vector3d& P, Eigen::Vector2d& p,
 void
 PinholeCamera::undistToPlane(const Eigen::Vector2d& p_u, Eigen::Vector2d& p) const
 {
+    // 对归一化相机系下的坐标进行投影
     Eigen::Vector2d p_d;
 
     if (m_noDistortion)
@@ -678,6 +683,7 @@ PinholeCamera::distortion(const Eigen::Vector2d& p_u, Eigen::Vector2d& d_u) cons
            p_u(1) * rad_dist_u + 2.0 * p2 * mxy_u + p1 * (rho2_u + 2.0 * my2_u);
 }
 
+// 未使用
 /**
  * \brief Apply distortion to input point (from the normalised plane)
  *        and calculate Jacobian
@@ -713,6 +719,7 @@ PinholeCamera::distortion(const Eigen::Vector2d& p_u, Eigen::Vector2d& d_u,
          dydmx, dydmy;
 }
 
+// 没有使用
 void
 PinholeCamera::initUndistortMap(cv::Mat& map1, cv::Mat& map2, double fScale) const
 {
@@ -742,6 +749,7 @@ PinholeCamera::initUndistortMap(cv::Mat& map1, cv::Mat& map2, double fScale) con
     cv::convertMaps(mapX, mapY, map1, map2, CV_32FC1, false);
 }
 
+// 未使用
 cv::Mat
 PinholeCamera::initUndistortRectifyMap(cv::Mat& map1, cv::Mat& map2,
                                        float fx, float fy,
@@ -824,6 +832,7 @@ PinholeCamera::getParameters(void) const
 void
 PinholeCamera::setParameters(const PinholeCamera::Parameters& parameters)
 {
+    // 这里重写了等号运算符，为什么要重载等号运算符尼，应该可以直接取等的
     mParameters = parameters;
     // 检查图片是否去过畸变
     if ((mParameters.k1() == 0.0) &&
@@ -866,6 +875,7 @@ PinholeCamera::readParameters(const std::vector<double>& parameterVec)
     setParameters(params);
 }
 
+// 用于标定
 void
 PinholeCamera::writeParameters(std::vector<double>& parameterVec) const
 {
@@ -880,6 +890,7 @@ PinholeCamera::writeParameters(std::vector<double>& parameterVec) const
     parameterVec.at(7) = mParameters.cy();
 }
 
+// 用于标定
 void
 PinholeCamera::writeParametersToYamlFile(const std::string& filename) const
 {

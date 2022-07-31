@@ -53,6 +53,10 @@ Camera::Parameters::Parameters(ModelType modelType,
     }
 }
 
+/**
+ * 返回引用，函数可以作为左值修改对应的变量；
+ * 当返回一个引用时，要注意被引用的对象不能超出作用域。所以返回一个对局部变量的引用是不合法的，但是，可以返回一个对静态变量的引用。
+ */
 Camera::ModelType&
 Camera::Parameters::modelType(void)
 {
@@ -119,6 +123,7 @@ Camera::mask(void) const
     return m_mask;
 }
 
+// 根据2D-3D的匹配关系，调用PnP求解位姿
 void
 Camera::estimateExtrinsics(const std::vector<cv::Point3f>& objectPoints,
                            const std::vector<cv::Point2f>& imagePoints,
@@ -128,29 +133,35 @@ Camera::estimateExtrinsics(const std::vector<cv::Point3f>& objectPoints,
     for (size_t i = 0; i < Ms.size(); ++i)
     {
         Eigen::Vector3d P;
+        // 获取去畸变的相机归一化坐标系
         liftProjective(Eigen::Vector2d(imagePoints.at(i).x, imagePoints.at(i).y), P);
 
+        // 获得相机归一化坐标系坐标
         P /= P(2);
 
         Ms.at(i).x = P(0);
         Ms.at(i).y = P(1);
     }
 
+    // 在这里已经将图像坐标转化到去畸变后的相机归一化坐标系下了，因此cameraMatrix就是单位阵了
     // assume unit focal length, zero principal point, and zero distortion
     cv::solvePnP(objectPoints, Ms, cv::Mat::eye(3, 3, CV_64F), cv::noArray(), rvec, tvec);
 }
 
+// 两个世界点在同一个相机下投影到图像的像素坐标的误差
 double
 Camera::reprojectionDist(const Eigen::Vector3d& P1, const Eigen::Vector3d& P2) const
 {
     Eigen::Vector2d p1, p2;
 
+    // 将三维点投影到图像坐标系
     spaceToPlane(P1, p1);
     spaceToPlane(P2, p2);
 
     return (p1 - p2).norm();
 }
 
+// 标定调用
 double
 Camera::reprojectionError(const std::vector< std::vector<cv::Point3f> >& objectPoints,
                           const std::vector< std::vector<cv::Point2f> >& imagePoints,
@@ -197,6 +208,7 @@ Camera::reprojectionError(const std::vector< std::vector<cv::Point3f> >& objectP
     return totalErr / pointsSoFar;
 }
 
+// 计算世界系坐标投影到图像的重投影误差
 double
 Camera::reprojectionError(const Eigen::Vector3d& P,
                           const Eigen::Quaterniond& camera_q,
@@ -211,6 +223,7 @@ Camera::reprojectionError(const Eigen::Vector3d& P,
     return (p - observed_p).norm();
 }
 
+// 根据已知的位姿，将世界系坐标投影到图像坐标
 void
 Camera::projectPoints(const std::vector<cv::Point3f>& objectPoints,
                       const cv::Mat& rvec,

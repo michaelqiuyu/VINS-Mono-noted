@@ -48,6 +48,7 @@ public:
         friend std::ostream& operator<< (std::ostream& out, const Parameters& params);
 
     private:
+        // 最好将参数进行封装，通过get和set进行获取和更新
         double m_k1;
         double m_k2;
         double m_p1;
@@ -142,6 +143,7 @@ private:
 typedef boost::shared_ptr<PinholeCamera> PinholeCameraPtr;
 typedef boost::shared_ptr<const PinholeCamera> PinholeCameraConstPtr;
 
+// 泛型，此函数没有被还用
 template <typename T>
 void
 PinholeCamera::spaceToPlane(const T* const params,

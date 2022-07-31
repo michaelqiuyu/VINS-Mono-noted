@@ -442,6 +442,10 @@ EquidistantCamera::liftProjective(const Eigen::Vector2d& p, Eigen::Vector3d& P) 
     double theta, phi;
     backprojectSymmetric(p_u, theta, phi);
 
+    /**
+     * 已知theta之后，r = sin(theta) / cos(theta), 归一化相机系坐标为：(rcos(phi), rsin(phi), 1)
+     * 由于是在liftSphere中调用，因此可以化简为(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta))
+     */
     P(0) = sin(theta) * cos(phi);
     P(1) = sin(theta) * sin(phi);
     P(2) = cos(theta);
@@ -456,9 +460,11 @@ EquidistantCamera::liftProjective(const Eigen::Vector2d& p, Eigen::Vector3d& P) 
 void
 EquidistantCamera::spaceToPlane(const Eigen::Vector3d& P, Eigen::Vector2d& p) const
 {
+    // 将三维相机系坐标变换到图像坐标
     double theta = acos(P(2) / P.norm());
     double phi = atan2(P(1), P(0));
 
+    // 获取畸变后的相机归一化坐标
     Eigen::Vector2d p_u = r(mParameters.k2(), mParameters.k3(), mParameters.k4(), mParameters.k5(), theta) * Eigen::Vector2d(cos(phi), sin(phi));
 
     // Apply generalised projection matrix
@@ -467,6 +473,7 @@ EquidistantCamera::spaceToPlane(const Eigen::Vector3d& P, Eigen::Vector2d& p) co
 }
 
 
+// 未使用
 /** 
  * \brief Project a 3D point to the image plane and calculate Jacobian
  *
@@ -477,6 +484,7 @@ void
 EquidistantCamera::spaceToPlane(const Eigen::Vector3d& P, Eigen::Vector2d& p,
                                 Eigen::Matrix<double,2,3>& J) const
 {
+    // 并没有计算J
     double theta = acos(P(2) / P.norm());
     double phi = atan2(P(1), P(0));
 
@@ -718,12 +726,41 @@ EquidistantCamera::fitOddPoly(const std::vector<double>& x, const std::vector<do
     }
 }
 
+/**
+ * todo:
+ * 此处在已知theta_d求解theta的时候，通过巧妙的构造，将多项式函数求解根的问题，变成了矩阵求解特征值的问题
+ * 但实际上，矩阵求解特征值的问题依然是多项式函数求根的问题，这里利用了Eigen的接口进行求解
+ * 值得注意的是，在测试的过程中，实特征值总是仅仅只有一个（且大于0），这是为什么？有没有可能不止一个实特征值，代码逻辑里面取最小值的理由是什么?
+ *
+ * 通过与ORB-SLAM3的比较：
+ *      1. 在theta_d <= pi/2时，二者的结果是相同的
+ *      2. VINS系列没有对theta_d进行裁剪，对theta_d>pi/2的时候依然使用同一个逻辑；而ORB-SLAM3进行了裁剪
+ *      3. 裁剪后，ORB-SLAM3的theta不满足多项式等式，也就是说，代码逻辑会抛弃视角在180°以外的特征点
+ *      4. 是否需要裁剪，需要去查验？
+ *
+ * 推广：对多项式函数f(x) = a0 + a1 * x + a2 * x^2 + ... + an * x^n，求其根
+ *      1. 构建一个n*n的矩阵A，其中A的(1, 0)到(n-1, n-2)的n-1阶方阵赋值为I
+ *      2. 构建一个n+1维向量coeff = (a0, a1, a2, ..., an)，令vec = -coeff/an，并获取vec的前n维，令为A的最后一列
+ *      3. A对应的特征多项式就是f(x)，求f(x)的根也就是求A的特征值
+ *      4. 将此处的系数带入，容易验证上面论述的正确性
+ */
 void
 EquidistantCamera::backprojectSymmetric(const Eigen::Vector2d& p_u,
                                         double& theta, double& phi) const
 {
+    /**
+     * 相机系下的三维点A与光心的连线与归一化相机系平面交于B1（对应r），经过畸变后与归一化相机系平面交于B2（对应theta_d）；有B1、B2和归一化平面的原点O三点共线
+     *
+     * phi等价于归一化相机系坐标(x, y, 1)，有tan(phi) = x / y
+     * cos(phi) = x / r, sin(phi) = y / r
+     *
+     * xd, yd → theta_d
+     * xc, yx → r
+     *
+     * theta_d / r = xd / xc = yd / yc
+     */
     double tol = 1e-10;
-    double p_u_norm = p_u.norm();
+    double p_u_norm = p_u.norm();  // 代表theta_d
 
     if (p_u_norm < 1e-10)
     {
@@ -731,8 +768,11 @@ EquidistantCamera::backprojectSymmetric(const Eigen::Vector2d& p_u,
     }
     else
     {
+        // 由于O、B1和B2共线，所以可以直接通过xd, yd计算phi
         phi = atan2(p_u(1), p_u(0));
     }
+
+    // notes: 对于theta的计算，可以通过高斯牛顿进行迭代计算
 
     int npow = 9;
     if (mParameters.k5() == 0.0)
@@ -776,6 +816,7 @@ EquidistantCamera::backprojectSymmetric(const Eigen::Vector2d& p_u,
 
     if (npow == 1)
     {
+        // 此时theta_d = theta = sqrt(xd^2 + yd^2) = p_u_norm
         theta = p_u_norm;
     }
     else
@@ -787,6 +828,8 @@ EquidistantCamera::backprojectSymmetric(const Eigen::Vector2d& p_u,
         A.block(1, 0, npow - 1, npow - 1).setIdentity();
         A.col(npow - 1) = - coeffs.block(0, 0, npow, 1) / coeffs(npow);
 
+        // 对矩阵A求特征值，问题依然回到了对特征多项式的根的求解；这里这样处理的目的是调用opencv的接口进行求解；
+        // 更好的办法是从opencv中将这部分的源码扒出来
         Eigen::EigenSolver<Eigen::MatrixXd> es(A);
         Eigen::MatrixXcd eigval = es.eigenvalues();
 
@@ -818,6 +861,7 @@ EquidistantCamera::backprojectSymmetric(const Eigen::Vector2d& p_u,
         }
         else
         {
+            // xc's todo: 为什么选择最小值
             theta = *std::min_element(thetas.begin(), thetas.end());
         }
     }
