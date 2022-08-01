@@ -37,6 +37,7 @@ Eigen::VectorXd polyfit(Eigen::VectorXd& xVec, Eigen::VectorXd& yVec, int poly_o
         B(i) = y;
     }
 
+    // 利用SVD分解求解逆矩阵，进而求解Ax=B
     Eigen::JacobiSVD<Eigen::MatrixXd> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV);
     Eigen::VectorXd x = svd.solve(B);
 

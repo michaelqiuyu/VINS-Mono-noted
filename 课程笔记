@@ -63,11 +63,8 @@
 		3.2.1 继承抽象的父类Camera，创建针孔相机
 		3.2.2 创建有大量的用于标定的函数，暂时不学习与标定相关的函数；其中函数estimateIntrinsics用于实现张正友博士的Z. Zhang, A Flexible New Technique for Camera Calibration, PAMI 2000
 		3.2.3 liftProjective快速去畸变：
-			1. 
-		3.2.4 distortion(const Eigen::Vector2d& p_u, Eigen::Vector2d& d_u)：
-			1. 
-		3.2.5 
-
+			1. 巧妙设计了一种快速去畸变的方法，用于快速求解畸变前的归一化相机系坐标
+			2. 注意，当畸变为外扩时，如果第一次修正后的归一化坐标不在当前的1/4图像时，此算法无法收敛
 
 	3.3 继承类：Equidistant，使用的是KB8模型
 		3.3.1 继承抽象的父类Camera，创建鱼眼相机，注意其参数是k2~k5与一般的k1~k4不同
@@ -81,12 +78,18 @@
 			2. 由于O、B1和B2共线，所以可以直接通过xd, yd计算phi
 			3. 对theta的求解：将关于theta的多项式函数令为矩阵A的特征多项式（转化方法见代码），然后调用Eigen的接口求解最小的特征多项式
 
-	3.4 继承类：Scaramuzza
+	3.4 继承类：Scaramuzza --- 暂时不深究
+		3.4.1 继承抽象的父类Camera，创建全景相机模型Scaramuzza
+		3.4.2 参考教程为：
+			1. https://blog.csdn.net/j879159541/article/details/125566948
+			2. https://sites.google.com/site/scarabotix/ocamcalib-toolbox
 
+	3.5 继承类：CataCamera --- 暂时不深究
+		3.5.1 继承抽象的父类Camera，创建全景相机模型Mei
+		3.5.2 参考教程为：
+			1. https://blog.csdn.net/j879159541/article/details/125409410
+			2. C. Mei, and P. Rives, Single View Point Omnidirectional Camera Calibration from Planar Grids, ICRA 2007
 
-
-
-liftProjective、distortion、distortion
 
 
 

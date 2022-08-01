@@ -460,7 +460,7 @@ PinholeCamera::liftProjective(const Eigen::Vector2d& p, Eigen::Vector3d& P) cons
     // 投影到归一化相机坐标系
     /**
      * author: xiongchao
-     * desc: 将图像点变换到归一化相机坐标系
+     * desc: 将图像点变换到归一化相机坐标系，注意这里的归一化相机系坐标是含有畸变的，后面还需要去畸变
      *      x / z = u / f_x - c_x / f_x;
      *      y / z = v / f_y - c_y / f_y;
      */
@@ -667,6 +667,7 @@ PinholeCamera::undistToPlane(const Eigen::Vector2d& p_u, Eigen::Vector2d& p) con
 void
 PinholeCamera::distortion(const Eigen::Vector2d& p_u, Eigen::Vector2d& d_u) const
 {
+    // 求解的是x_distort - x, y_distort - y
     double k1 = mParameters.k1();
     double k2 = mParameters.k2();
     double p1 = mParameters.p1();
@@ -710,6 +711,10 @@ PinholeCamera::distortion(const Eigen::Vector2d& p_u, Eigen::Vector2d& d_u,
     d_u << p_u(0) * rad_dist_u + 2.0 * p1 * mxy_u + p2 * (rho2_u + 2.0 * mx2_u),
            p_u(1) * rad_dist_u + 2.0 * p2 * mxy_u + p1 * (rho2_u + 2.0 * my2_u);
 
+    /**
+     * (u, v)对(x, y)求导的过程可以经过：(u, v)对(x_distort, y_distort)的导数，(x_distort, y_distort)对(x, y)的导数
+     * 这里计算的是(x_distort, y_distort)对(x, y)的导数
+     */
     double dxdmx = 1.0 + rad_dist_u + k1 * 2.0 * mx2_u + k2 * rho2_u * 4.0 * mx2_u + 2.0 * p1 * p_u(1) + 6.0 * p2 * p_u(0);
     double dydmx = k1 * 2.0 * p_u(0) * p_u(1) + k2 * 4.0 * rho2_u * p_u(0) * p_u(1) + p1 * 2.0 * p_u(0) + 2.0 * p2 * p_u(1);
     double dxdmy = dydmx;
