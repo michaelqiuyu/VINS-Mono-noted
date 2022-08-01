@@ -37,58 +37,57 @@
 		1.5.3 使用src下面的camkelists.txt加载
 		1.5.4 使用当前窗口，不要新建窗口，新建窗口的话，source就是去意义了，然后正常编译即可
 
-2. feature tracker
-	1.1 特征点存储信息：
-		1.1.1 像素坐标 → 特征点提取算法
-		1.1.2 去畸变后归一化坐标 → 特征点去畸变算法
-		1.1.3 特征点id → 光流跟踪算法
-		1.1.4 特征点速度 → 时间同步算法使用
-	1.2 快门（shutter）: https://blog.csdn.net/weixin_43503508/article/details/108014615
-		1.2.1 全局快门（Global Shutter）
-			1. 通过整幅场景在同一时间曝光实现的。Sensor所有像素点同时收集光线，同时曝光。即在曝光开始的时候，Sensor开始收集光线；在曝光结束的时候，光线收集电路被切断。然后Sensor值读出即为一幅照片。CCD就是Global shutter工作方式。所有像元同时曝光。
-			2. 曝光时间更短，但会增加读出噪声；
-		1.2.2 卷帘快门（Rolling Shutter）
-			1. 与Global shutter不同，它是通过Sensor逐行曝光的方式实现的。在曝光开始的时候，Sensor逐行扫描逐行进行曝光，直至所有像素点都被曝光。当然，所有的动作在极短的时间内完成。不同行像元的曝光时间不同。
-			2. 对于相机厂家，Rolling shutter可以达到更高的帧速，但当曝光不当或物体移动较快时，会出现部分曝光(partial exposure)、斜坡图形(skew)、晃动(wobble) 等现象。这种Rolling shutter方式拍摄出现的现象，就定义为果冻效应。
-		1.2.3 曝光时间短的应用（如<500μs）适合Global shutter，曝光时间长（如大于500μs）时，选择rolling shutter可以有更低的噪声和帧速。
+2. camera model
+	2.1 抽象类：Camera
+		2.1.1 负责创建一些公有变量和公有函数，有一些函数是纯虚函数，继承类必须重写
+		2.1.2 创建有大量的用于标定的函数，暂时不学习与标定相关的函数
+		2.1.3 比较有意思的是函数reprojectionDist：其评价的是两个相机系下的三维点，在同一个相机下投影到图像上，它们的像素坐标的差值作为重投影误差
 
-
-3. camera model
-	3.1 抽象类：Camera
-		3.1.1 负责创建一些公有变量和公有函数，有一些函数是纯虚函数，继承类必须重写
-		3.1.2 创建有大量的用于标定的函数，暂时不学习与标定相关的函数
-		3.1.3 比较有意思的是函数reprojectionDist：其评价的是两个相机系下的三维点，在同一个相机下投影到图像上，它们的像素坐标的差值作为重投影误差
-
-	3.2 继承类：PINHOLE
-		3.2.1 继承抽象的父类Camera，创建针孔相机
-		3.2.2 创建有大量的用于标定的函数，暂时不学习与标定相关的函数；其中函数estimateIntrinsics用于实现张正友博士的Z. Zhang, A Flexible New Technique for Camera Calibration, PAMI 2000
-		3.2.3 liftProjective快速去畸变：
+	2.2 继承类：PINHOLE
+		2.2.1 继承抽象的父类Camera，创建针孔相机
+		2.2.2 创建有大量的用于标定的函数，暂时不学习与标定相关的函数；其中函数estimateIntrinsics用于实现张正友博士的Z. Zhang, A Flexible New Technique for Camera Calibration, PAMI 2000
+		2.2.3 liftProjective快速去畸变：
 			1. 巧妙设计了一种快速去畸变的方法，用于快速求解畸变前的归一化相机系坐标
 			2. 注意，当畸变为外扩时，如果第一次修正后的归一化坐标不在当前的1/4图像时，此算法无法收敛
 
-	3.3 继承类：Equidistant，使用的是KB8模型
-		3.3.1 继承抽象的父类Camera，创建鱼眼相机，注意其参数是k2~k5与一般的k1~k4不同
-		3.3.2 创建有大量的用于标定的函数，暂时不学习与标定相关的函数；其中函数estimateIntrinsics用于实现C. Hughes, P. Denny, M. Glavin, and E. Jones, Equidistant Fish-Eye Calibration and Rectification by Vanishing Point；Extraction, PAMI 2010 Find circles from rows of chessboard corners, and for each pair of circles, find vanishing points: v1 and v2. 
-		3.3.3 liftProjective
+	2.3 继承类：Equidistant，使用的是KB8模型
+		2.3.1 继承抽象的父类Camera，创建鱼眼相机，注意其参数是k2~k5与一般的k1~k4不同
+		2.3.2 创建有大量的用于标定的函数，暂时不学习与标定相关的函数；其中函数estimateIntrinsics用于实现C. Hughes, P. Denny, M. Glavin, and E. Jones, Equidistant Fish-Eye Calibration and Rectification by Vanishing Point；Extraction, PAMI 2010 Find circles from rows of chessboard corners, and for each pair of circles, find vanishing points: v1 and v2. 
+		2.3.3 liftProjective
 			1. 将像素坐标（u, v）变换为畸变后的归一化相机系坐标(xd, yd)
 			2. 使用backprojectSymmetric求解theta和phi
 			3. 将(xd, yd)通过theta和phi变化到去畸变前的相机归一化坐标系下，并单位化，从而变换到球面上
-		3.3.4 backprojectSymmetric
+		2.3.4 backprojectSymmetric
 			1. 相机系下的三维点A与光心的连线与归一化相机系平面交于B1（对应r），经过畸变后与归一化相机系平面交于B2（对应theta_d）；有B1、B2和归一化平面的原点O三点共线
 			2. 由于O、B1和B2共线，所以可以直接通过xd, yd计算phi
 			3. 对theta的求解：将关于theta的多项式函数令为矩阵A的特征多项式（转化方法见代码），然后调用Eigen的接口求解最小的特征多项式
 
-	3.4 继承类：Scaramuzza --- 暂时不深究
-		3.4.1 继承抽象的父类Camera，创建全景相机模型Scaramuzza
-		3.4.2 参考教程为：
+	2.4 继承类：Scaramuzza --- 暂时不深究
+		2.4.1 继承抽象的父类Camera，创建全景相机模型Scaramuzza
+		2.4.2 参考教程为：
 			1. https://blog.csdn.net/j879159541/article/details/125566948
 			2. https://sites.google.com/site/scarabotix/ocamcalib-toolbox
 
-	3.5 继承类：CataCamera --- 暂时不深究
-		3.5.1 继承抽象的父类Camera，创建全景相机模型Mei
-		3.5.2 参考教程为：
+	2.5 继承类：CataCamera --- 暂时不深究
+		2.5.1 继承抽象的父类Camera，创建全景相机模型Mei
+		2.5.2 参考教程为：
 			1. https://blog.csdn.net/j879159541/article/details/125409410
 			2. C. Mei, and P. Rives, Single View Point Omnidirectional Camera Calibration from Planar Grids, ICRA 2007
+
+3. feature tracker
+	3.1 特征点存储信息：
+		3.1.1 像素坐标 → 特征点提取算法
+		3.1.2 去畸变后归一化坐标 → 特征点去畸变算法
+		3.1.3 特征点id → 光流跟踪算法
+		3.1.4 特征点速度 → 时间同步算法使用
+	3.2 快门（shutter）: https://blog.csdn.net/weixin_43503508/article/details/108014615
+		3.2.1 全局快门（Global Shutter）
+			1. 通过整幅场景在同一时间曝光实现的。Sensor所有像素点同时收集光线，同时曝光。即在曝光开始的时候，Sensor开始收集光线；在曝光结束的时候，光线收集电路被切断。然后Sensor值读出即为一幅照片。CCD就是Global shutter工作方式。所有像元同时曝光。
+			2. 曝光时间更短，但会增加读出噪声；
+		3.2.2 卷帘快门（Rolling Shutter）
+			1. 与Global shutter不同，它是通过Sensor逐行曝光的方式实现的。在曝光开始的时候，Sensor逐行扫描逐行进行曝光，直至所有像素点都被曝光。当然，所有的动作在极短的时间内完成。不同行像元的曝光时间不同。
+			2. 对于相机厂家，Rolling shutter可以达到更高的帧速，但当曝光不当或物体移动较快时，会出现部分曝光(partial exposure)、斜坡图形(skew)、晃动(wobble) 等现象。这种Rolling shutter方式拍摄出现的现象，就定义为果冻效应。
+		3.2.3 曝光时间短的应用（如<500μs）适合Global shutter，曝光时间长（如大于500μs）时，选择rolling shutter可以有更低的噪声和帧速。
 
 
 
