@@ -59,7 +59,7 @@ void readParameters(ros::NodeHandle &n)
     SHOW_TRACK = fsSettings["show_track"];  // 是否可视化
     EQUALIZE = fsSettings["equalize"];  // 是否做均衡化处理
     FISHEYE = fsSettings["fisheye"];
-    if (FISHEYE == 1)
+    if (FISHEYE == 1)  // 只有鱼眼相机才有mask
         FISHEYE_MASK = VINS_FOLDER_PATH + "config/fisheye_mask.jpg";
     CAM_NAMES.push_back(config_file);
 

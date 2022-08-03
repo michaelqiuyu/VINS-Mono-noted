@@ -40,7 +40,7 @@ CameraFactory::generateCamera(Camera::ModelType modelType,
     {
     case Camera::KANNALA_BRANDT:
     {
-        EquidistantCameraPtr camera(new EquidistantCamera);
+        EquidistantCameraPtr camera(new EquidistantCamera);  // 拷贝构造
 
         EquidistantCamera::Parameters params = camera->getParameters();
         params.cameraName() = cameraName;

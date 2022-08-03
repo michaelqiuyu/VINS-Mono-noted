@@ -44,7 +44,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         ROS_WARN("image discontinue! reset the feature tracker!");
         first_image_flag = true; 
         last_image_time = 0;
-        pub_count = 1;
+        pub_count = 1;  // reset为初始值
         std_msgs::Bool restart_flag;
         restart_flag.data = true;
         pub_restart.publish(restart_flag);  // 告诉其他模块要重启了
@@ -63,6 +63,12 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
          * 如果图片的时间戳是等间隔的话，只有在图片频率与FREQ比较接近的时候，才会产生轻微的影响，如图片帧率为30，FREQ为25的时候，有第101张图片进入这个判断，会比
          *
          * 这里的处理只是为了使得pub_count对时间的变化更加敏感
+         *
+         * 令f = 1.0 * pub_count / (img_msg->header.stamp.toSec() - first_image_time)，那么|f - FREQ| < 0.01 * FREQ
+         *  → 0.99 * FREQ < f  < 1.01 * FREQ
+         *  也就是说，希望图片发布的频率非常接近FREQ
+         *
+         *  如果在某个时间段，图像频率突然升高，但是一样满足上面的if，这个时候，下面的这个if就不会满足
          */
         if (abs(1.0 * pub_count / (img_msg->header.stamp.toSec() - first_image_time) - FREQ) < 0.01 * FREQ)
         {
@@ -236,6 +242,7 @@ int main(int argc, char **argv)
     {
         for (int i = 0; i < NUM_OF_CAM; i++)
         {
+            // 所有鱼眼相机的mask都一样，这是不可能的；当然这里实际上是单目，但是又有一个NUM_OF_CAM变量，显得很别扭；只能猜测是为了后续方便拓展
             trackerData[i].fisheye_mask = cv::imread(FISHEYE_MASK, 0);
             if(!trackerData[i].fisheye_mask.data)
             {

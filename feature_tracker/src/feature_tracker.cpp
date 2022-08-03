@@ -334,7 +334,7 @@ void FeatureTracker::showUndistortion(const string &name)
 // 当前帧所有点统一去畸变，同时计算特征点速度，用来后续时间戳标定
 /**
  * author: xiongchao
- * 需要注意的是，在桶形畸变的情形下，如果更新后的点与原始点不在同一个1/4图像内，这个去畸变算法就会发散，但是这种情形一般不会出现
+ * 需要注意的是，在桶形畸变的情形下，如果更新后的点与原始点不在同一个1/4图像内，这个去畸变算法就会发散，但是这种情形不会出现
  */
 void FeatureTracker::undistortedPoints()
 {
