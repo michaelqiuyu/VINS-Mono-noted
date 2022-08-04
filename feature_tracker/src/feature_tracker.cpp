@@ -34,7 +34,7 @@ FeatureTracker::FeatureTracker()
 {
 }
 
-// 给现有的特征点设置mask，目的为了特征点的均匀化
+// 给现有的特征点设置mask，目的为了特征点的均匀化：第一帧不做这个操作
 void FeatureTracker::setMask()
 {
     if(FISHEYE)
@@ -46,7 +46,7 @@ void FeatureTracker::setMask()
     // prefer to keep features that are tracked for long time
     vector<pair<int, pair<cv::Point2f, int>>> cnt_pts_id;
 
-    for (unsigned int i = 0; i < forw_pts.size(); i++)
+    for (unsigned int i = 0; i < forw_pts.size(); i++)  // 第一帧的时候，forw_pts为空
         cnt_pts_id.push_back(make_pair(track_cnt[i], make_pair(forw_pts[i], ids[i])));
     // 利用光流特点，追踪多的稳定性好，排前面
     sort(cnt_pts_id.begin(), cnt_pts_id.end(), [](const pair<int, pair<cv::Point2f, int>> &a, const pair<int, pair<cv::Point2f, int>> &b)
@@ -104,7 +104,7 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
 {
     cv::Mat img;
     TicToc t_r;
-    cur_time = _cur_time;
+    cur_time = _cur_time;  // 令人比较迷惑的是，cur_img和cur_pts表示上一帧的图像和特征点，而cur_time表示当前时间
 
     if (EQUALIZE)
     {
@@ -225,7 +225,7 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
 void FeatureTracker::rejectWithF()
 {
     // 当前被追踪到的光流至少8个点
-    if (forw_pts.size() >= 8)
+    if (forw_pts.size() >= 8)  // 第一帧不做这个操作
     {
         ROS_DEBUG("FM ransac begins");
         TicToc t_f;

@@ -81,8 +81,6 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
 
     // 即使不发布也是正常做光流追踪的！光流对图像的变化要求尽可能小
     // 光流需要图像的变动尽可能小
-
-
     cv_bridge::CvImageConstPtr ptr;
     // 把ros message转成cv::Mat
     if (img_msg->encoding == "8UC1")
@@ -106,9 +104,10 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
     {
         ROS_DEBUG("processing camera %d", i);
         if (i != 1 || !STEREO_TRACK)
+            // 即使PUB_THIS_FRAME为false，也会执行，光流的需要
             trackerData[i].readImage(ptr->image.rowRange(ROW * i, ROW * (i + 1)), img_msg->header.stamp.toSec());
         else
-        {
+        {  // 不会执行到这里
             if (EQUALIZE)
             {
                 cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE();
@@ -129,7 +128,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         for (int j = 0; j < NUM_OF_CAM; j++)
             if (j != 1 || !STEREO_TRACK)
                 completed |= trackerData[j].updateID(i);    // 单目的情况下可以直接用=号
-        if (!completed)
+        if (!completed)  // 越界后，就直接跳出循环了，因为i后面也一定越界
             break;
     }
     // 给后端喂数据
