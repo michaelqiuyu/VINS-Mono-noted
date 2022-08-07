@@ -445,6 +445,7 @@ EquidistantCamera::liftProjective(const Eigen::Vector2d& p, Eigen::Vector3d& P) 
     /**
      * 已知theta之后，r = sin(theta) / cos(theta), 归一化相机系坐标为：(rcos(phi), rsin(phi), 1)
      * 由于是在liftSphere中调用，因此可以化简为(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta))
+     * 区别于针孔相机返回的是归一化相机系坐标
      */
     P(0) = sin(theta) * cos(phi);
     P(1) = sin(theta) * sin(phi);

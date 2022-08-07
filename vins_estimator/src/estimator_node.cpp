@@ -142,7 +142,8 @@ getMeasurements()
             continue;
         }
         /**
-         * notes: 为什么不判断imu_buf.front()->header.stamp.toSec() > feature_buf.front()->header.stamp.toSec() + estimator.td，此时依然是没有重叠区域产生的
+         * notes: 为什么不判断imu_buf.front()->header.stamp.toSec() > feature_buf.back()->header.stamp.toSec() + estimator.td
+         *      此时依然是没有重叠区域产生的，而且上面的if一定成立，所以会一直feature_buf.pop();
          */
         // 此时就保证了图像前一定有imu数据
         sensor_msgs::PointCloudConstPtr img_msg = feature_buf.front();
@@ -182,7 +183,7 @@ getMeasurements()
  */
 void imu_callback(const sensor_msgs::ImuConstPtr &imu_msg)
 {
-    if (imu_msg->header.stamp.toSec() <= last_imu_t)
+    if (imu_msg->header.stamp.toSec() <= last_imu_t)  // last_imu_t初值为0
     {
         ROS_WARN("imu message in disorder!");
         return;
@@ -194,6 +195,7 @@ void imu_callback(const sensor_msgs::ImuConstPtr &imu_msg)
     m_buf.unlock();
     con.notify_one();  // 防止CPU占用过高
 
+    // xc's todo: 为什么又进行赋值？
     last_imu_t = imu_msg->header.stamp.toSec();
 
     {
@@ -214,7 +216,7 @@ void imu_callback(const sensor_msgs::ImuConstPtr &imu_msg)
  */
 void feature_callback(const sensor_msgs::PointCloudConstPtr &feature_msg)
 {
-    if (!init_feature)
+    if (!init_feature)  // 初值为false，第一帧忽略
     {
         //skip the first detected feature, which doesn't contain optical flow speed
         init_feature = 1;
@@ -253,6 +255,7 @@ void restart_callback(const std_msgs::BoolConstPtr &restart_msg)
     return;
 }
 
+// xc's todo: 暂未开发？
 void relocalization_callback(const sensor_msgs::PointCloudConstPtr &points_msg)
 {
     //printf("relocalization callback! \n");

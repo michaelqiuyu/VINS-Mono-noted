@@ -165,9 +165,9 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
                     p.z = 1;
                     // 利用这个ros消息的格式进行信息存储
                     feature_points->points.push_back(p);
-                    id_of_point.values.push_back(p_id * NUM_OF_CAM + i);
-                    u_of_point.values.push_back(cur_pts[j].x);
-                    v_of_point.values.push_back(cur_pts[j].y);
+                    id_of_point.values.push_back(p_id * NUM_OF_CAM + i);  // 实际上就是p_id
+                    u_of_point.values.push_back(cur_pts[j].x);  // u坐标
+                    v_of_point.values.push_back(cur_pts[j].y);  // v坐标
                     velocity_x_of_point.values.push_back(pts_velocity[j].x);
                     velocity_y_of_point.values.push_back(pts_velocity[j].y);
                 }
@@ -202,6 +202,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
                 for (unsigned int j = 0; j < trackerData[i].cur_pts.size(); j++)
                 {
                     double len = std::min(1.0, 1.0 * trackerData[i].track_cnt[j] / WINDOW_SIZE);
+                    // 每一个点的颜色都不一样，颜色根据点的跟踪次数决定
                     cv::circle(tmp_img, trackerData[i].cur_pts[j], 2, cv::Scalar(255 * (1 - len), 0, 255 * len), 2);
                     //draw speed line
                     /*

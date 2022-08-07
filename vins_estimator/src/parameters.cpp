@@ -52,7 +52,7 @@ void readParameters(ros::NodeHandle &n)
     fsSettings["imu_topic"] >> IMU_TOPIC;
 
     SOLVER_TIME = fsSettings["max_solver_time"];    // 单次优化最大求解时间
-    NUM_ITERATIONS = fsSettings["max_num_iterations"];  // 单词优化最大迭代次数
+    NUM_ITERATIONS = fsSettings["max_num_iterations"];  // 单次优化最大迭代次数
     MIN_PARALLAX = fsSettings["keyframe_parallax"]; // 根据视差确定关键帧
     MIN_PARALLAX = MIN_PARALLAX / FOCAL_LENGTH;
 
@@ -112,8 +112,8 @@ void readParameters(ros::NodeHandle &n)
         
     } 
 
-    INIT_DEPTH = 5.0;
-    BIAS_ACC_THRESHOLD = 0.1;  // 特征点深度的默认值
+    INIT_DEPTH = 5.0;  // 特征点深度的默认值
+    BIAS_ACC_THRESHOLD = 0.1;
     BIAS_GYR_THRESHOLD = 0.1;
 
     // 传感器时间延时相关

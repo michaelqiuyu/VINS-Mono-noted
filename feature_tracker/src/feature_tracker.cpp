@@ -41,11 +41,11 @@ void FeatureTracker::setMask()
         mask = fisheye_mask.clone();
     else
         mask = cv::Mat(ROW, COL, CV_8UC1, cv::Scalar(255));
-    
 
     // prefer to keep features that are tracked for long time
     vector<pair<int, pair<cv::Point2f, int>>> cnt_pts_id;
 
+    // 执行光流跟踪之后，track_cnt在reduceVector中被resize了，在还没有赋值的时候，使用的是默认值0
     for (unsigned int i = 0; i < forw_pts.size(); i++)  // 第一帧的时候，forw_pts为空
         cnt_pts_id.push_back(make_pair(track_cnt[i], make_pair(forw_pts[i], ids[i])));
     // 利用光流特点，追踪多的稳定性好，排前面
@@ -148,6 +148,7 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
             if (status[i] && !inBorder(forw_pts[i]))    // 追踪状态好检查在不在图像范围
                 status[i] = 0;
         reduceVector(prev_pts, status); // 没用到
+        // notes：在这里会将cur_pts和forw_pts的size处理成一样，后面会进行对极几何约束
         reduceVector(cur_pts, status);
         reduceVector(forw_pts, status);
         reduceVector(ids, status);  // 特征点的id
@@ -167,10 +168,10 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
     if (PUB_THIS_FRAME)
     {
         // Step 3 通过对级约束来剔除outlier
-        rejectWithF();
+        rejectWithF();  // 第二次运行这个函数的时候，track_cnt依旧为空
         ROS_DEBUG("set mask begins");
         TicToc t_m;
-        setMask();  // 均匀化
+        setMask();  // 均匀化；第二次运行这个函数的时候，track_cnt才开始计数
         ROS_DEBUG("set mask costs %fms", t_m.toc());
 
         ROS_DEBUG("detect feature begins");
@@ -214,6 +215,7 @@ void FeatureTracker::readImage(const cv::Mat &_img, double _cur_time)
     prev_un_pts = cur_un_pts;   // 以上三个量无用
     cur_img = forw_img; // 实际上是上一帧的图像
     cur_pts = forw_pts; // 上一帧的特征点
+    // 在做对极约束的时候，已经对特征点做了去畸变，在这里实际上只需要对新增的特征点去畸变即可；第一帧的特征点全部来自新增
     undistortedPoints();
     prev_time = cur_time;
 }
@@ -229,15 +231,40 @@ void FeatureTracker::rejectWithF()
     {
         ROS_DEBUG("FM ransac begins");
         TicToc t_f;
+        // 在做完光流跟踪后，会将cur_pts和forw_pts的size处理成一样
         vector<cv::Point2f> un_cur_pts(cur_pts.size()), un_forw_pts(forw_pts.size());
         for (unsigned int i = 0; i < cur_pts.size(); i++)
         {
             Eigen::Vector3d tmp_p;
-            // 得到相机归一化坐标系的值
+            // 得到相机坐标系的值：2D点反向投影到去畸变的3D坐标，针孔相机返回的是归一化相机系坐标，鱼眼返回的是一个单位球面坐标
+            // 这里的操作里面含有x/z，实际上就是在计算归一化相机系坐标了
             m_camera->liftProjective(Eigen::Vector2d(cur_pts[i].x, cur_pts[i].y), tmp_p);
             // 这里用一个虚拟相机，原因同样参考https://github.com/HKUST-Aerial-Robotics/VINS-Mono/issues/48
             // 这里有个好处就是对F_THRESHOLD和相机无关
             // 投影到虚拟相机的像素坐标系
+            /**
+             * 使用虚拟相机的原因是：对极几何的阈值受到fx和fy的影响(例如fx = alpha * f，alpha表示像素/米，也就是说fx代表了焦距等价于多少个像素)
+             * 但是在对极几何中，需要给定点到极线的距离的阈值约束，对于不同的fx，应该给与不同的阈值（这一点与ORB-SLAM3是不同的，ORB3认为在像素平面上是1自由度的卡方分布阈值，与fx和fy的值是无关的）
+             * 在这里有一个假设是：FOCAL_LENGTH对应于F_THRESHOLD；二者根据真实大小同等比例缩放，例如fx=2*FOCAL_LENGTH，那么对极几何的阈值为2*F_THRESHOLD
+             *
+             * 从以下可以推导：
+             *      x / z = (u - cx) / fx, y / z = (v - cy) / fy
+             *      u' = f0 * x / z + cx / 2; v' = f0 * y / z + cy / 2
+             *
+             *      u'   f0/fx    0    (1-f0/fx)*cx         u
+             *      v' =   0    f0/fy  (1-f0/fy)*cy    *    v     →      p' = A * p
+             *      1      0      0          1              1
+             *
+             *      对于对极几何约束而言，p2.t * k2.inv.t * t.hat * R * k1.inv * p1 = 0 →
+             *          p2'.t * A.int.t * K2.inv * t.hat * R * k1.inv * A.inv * p1' = 0 →
+             *
+             *                   f0/fx    0    (1-f0/fx)*cx         fx    0    cx       f0   0   cx
+             *      其中A * K1 =   0     f0/fy  (1-f0/fy)*cy    *    0     fy   cy   =   0    f0  cy
+             *                    0       0         1               0     0    1        0    0   1
+             *      通过虚拟相机，使得对极几何使用的内参矩阵实际上变成了一个设定好的、固定的矩阵，这样就可以对任何fx和fy不用每次都变动阈值，
+             *      而是使用一个设定好的F_THRESHOLD（我们当然也可以每次动态的计算阈值）
+             *
+             */
             tmp_p.x() = FOCAL_LENGTH * tmp_p.x() / tmp_p.z() + COL / 2.0;
             tmp_p.y() = FOCAL_LENGTH * tmp_p.y() / tmp_p.z() + ROW / 2.0;
             un_cur_pts[i] = cv::Point2f(tmp_p.x(), tmp_p.y());
@@ -281,7 +308,7 @@ bool FeatureTracker::updateID(unsigned int i)
     if (i < ids.size())
     {
         if (ids[i] == -1)
-            ids[i] = n_id++;
+            ids[i] = n_id++;  // n_id静态变量，从零开始递增
         return true;
     }
     else
@@ -341,12 +368,14 @@ void FeatureTracker::undistortedPoints()
     cur_un_pts.clear();
     cur_un_pts_map.clear();
     //cv::undistortPoints(cur_pts, un_pts, K, cv::Mat());
+    // notes: 在这里对所有的特征点都做了去畸变的操作，但是在对极几何中已经对特征点做了去畸变了，因此在这里可以选择对没有做对极几何的点去畸变
     for (unsigned int i = 0; i < cur_pts.size(); i++)
     {
-        // 有的之前去过畸变了，这里连同新人重新做一次
+        // 有的之前去过畸变了，这里连同新的特征点重新做一次，有些费时；ids[i]!=-1表示非新增，在对极几何中已经做了，不需要重新做了，此处逻辑可以进行修改，加快运行速度
         Eigen::Vector2d a(cur_pts[i].x, cur_pts[i].y);
         Eigen::Vector3d b;
         m_camera->liftProjective(a, b);
+        // 获取的是归一化相机系坐标
         cur_un_pts.push_back(cv::Point2f(b.x() / b.z(), b.y() / b.z()));
         // id->坐标的map
         cur_un_pts_map.insert(make_pair(ids[i], cv::Point2f(b.x() / b.z(), b.y() / b.z())));
