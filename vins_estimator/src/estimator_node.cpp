@@ -175,7 +175,7 @@ getMeasurements()
             ROS_WARN("no imu between two image");
         measurements.emplace_back(IMUs, img_msg);
 
-#if 1
+#if 0
         // 测试时间戳的对齐
         std::cout << std::fixed << std::setprecision(15);
         std::cout << "IMU的时间戳为：" << std::endl;
