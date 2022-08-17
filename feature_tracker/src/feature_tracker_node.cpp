@@ -151,7 +151,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
             auto &un_pts = trackerData[i].cur_un_pts;   // 去畸变的归一化相机坐标系
             auto &cur_pts = trackerData[i].cur_pts; // 像素坐标
             auto &ids = trackerData[i].ids; // id
-            auto &pts_velocity = trackerData[i].pts_velocity;   // 归一化坐标下的速度
+            auto &pts_velocity = trackerData[i].pts_velocity;   // 去畸变后的归一化相机系坐标下的速度
             for (unsigned int j = 0; j < ids.size(); j++)
             {
                 // 只发布追踪大于1的，因为等于1没法构成重投影约束，也没法三角化

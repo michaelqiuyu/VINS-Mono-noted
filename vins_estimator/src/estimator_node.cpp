@@ -44,6 +44,7 @@ double last_imu_t = 0;
  * 
  * @param[in] imu_msg 
  */
+// xc's todo: 这个函数是否仅仅用于可视化的逻辑，而并不会对算法的核心逻辑产生影响？
 void predict(const sensor_msgs::ImuConstPtr &imu_msg)
 {
     double t = imu_msg->header.stamp.toSec();
@@ -125,7 +126,7 @@ getMeasurements()
             return measurements;
         // imu   *******
         // image          *****
-        // 这就是imu还没来
+        // 这就是image还没来
         if (!(imu_buf.back()->header.stamp.toSec() > feature_buf.front()->header.stamp.toSec() + estimator.td))
         {
             //ROS_WARN("wait for imu, only should happen at the beginning");
@@ -154,6 +155,8 @@ getMeasurements()
          * IMG            *     *     *     *
          *
          * notes: 可能第一帧图像之前可能有非常多的IMU数据，实际上第一帧的数据不会使用
+         *
+         * IMUs中存储的是img_msg前面的IMU信息以及其后面（也可能恰好相等）一个IMU信息
          */
         std::vector<sensor_msgs::ImuConstPtr> IMUs;
         while (imu_buf.front()->header.stamp.toSec() < img_msg->header.stamp.toSec() + estimator.td)
@@ -171,6 +174,20 @@ getMeasurements()
         if (IMUs.empty())
             ROS_WARN("no imu between two image");
         measurements.emplace_back(IMUs, img_msg);
+
+#if 1
+        // 测试时间戳的对齐
+        std::cout << std::fixed << std::setprecision(15);
+        std::cout << "IMU的时间戳为：" << std::endl;
+        for (int i = 0; i < IMUs.size(); i++) {
+            if (i == IMUs.size() - 1 || i == IMUs.size() - 1)
+                std::cout << "\t" << IMUs[i]->header.stamp.toSec() << std::endl;
+        }
+        std::cout << std::endl;
+        std::cout << "image的时间戳为：\n\t" << img_msg->header.stamp.toSec() << std::endl;
+        std::cout << std::endl;
+#endif
+
     }
     return measurements;
 }
@@ -255,7 +272,6 @@ void restart_callback(const std_msgs::BoolConstPtr &restart_msg)
     return;
 }
 
-// xc's todo: 暂未开发？
 void relocalization_callback(const sensor_msgs::PointCloudConstPtr &points_msg)
 {
     //printf("relocalization callback! \n");
@@ -305,17 +321,16 @@ void process()
                     //printf("imu: dt:%f a: %f %f %f w: %f %f %f\n",dt, dx, dy, dz, rx, ry, rz);
 
                 }
-                else    // 这就是针对最后一个imu数据，需要做一个简单的线性插值
+                else    // 这就是针对最后一个imu数据（最后一个IMU的时间戳也可能正好等于图像的时间戳，因此，也不用进行插值了），需要做一个简单的线性插值
                 {
+                    // current_time表示倒数第二个IMU时间戳，t表示倒数第一个IMU的时间戳
                     double dt_1 = img_t - current_time;
                     double dt_2 = t - img_t;
                     current_time = img_t;
                     ROS_ASSERT(dt_1 >= 0);
                     ROS_ASSERT(dt_2 >= 0);
                     ROS_ASSERT(dt_1 + dt_2 > 0);
-                    /**
-                     * notes: 时间越近，权重越大
-                     */
+
                     double w1 = dt_2 / (dt_1 + dt_2);
                     double w2 = dt_1 / (dt_1 + dt_2);
                     dx = w1 * dx + w2 * imu_msg->linear_acceleration.x;
@@ -364,15 +379,16 @@ void process()
             map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> image;
             for (unsigned int i = 0; i < img_msg->points.size(); i++)
             {
+                // 从feature_tracker_node中的img_callback函数中的PUB_THIS_FRAME后的代码得知：
                 int v = img_msg->channels[0].values[i] + 0.5;
                 int feature_id = v / NUM_OF_CAM;
                 int camera_id = v % NUM_OF_CAM;
-                double x = img_msg->points[i].x;    // 去畸变后归一滑像素坐标
+                double x = img_msg->points[i].x;    // 去畸变后归一化相机系坐标
                 double y = img_msg->points[i].y;
                 double z = img_msg->points[i].z;
                 double p_u = img_msg->channels[1].values[i];    // 特征点像素坐标
                 double p_v = img_msg->channels[2].values[i];
-                double velocity_x = img_msg->channels[3].values[i]; // 特征点速度
+                double velocity_x = img_msg->channels[3].values[i]; // 去畸变后的归一化相机系的特征点的运动速度
                 double velocity_y = img_msg->channels[4].values[i];
                 ROS_ASSERT(z == 1); // 检查是不是归一化
                 Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
@@ -385,7 +401,7 @@ void process()
             estimator.processImage(image, img_msg->header);
 
             // 一些打印以及topic的发送
-            double whole_t = t_s.toc();
+            double whole_t = t_s.toc();  // 从定义这个变量到此时经过的时间
             printStatistics(estimator, whole_t);
             std_msgs::Header header = img_msg->header;
             header.frame_id = "world";
