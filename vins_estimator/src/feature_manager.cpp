@@ -55,7 +55,8 @@ int FeatureManager::getFeatureCount()
  * @return true 
  * @return false 
  */
-
+// 仅仅由Estimator::processImage调用
+// xc's todo: 检查的是当前帧还是当前帧的上一帧？
 bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, double td)
 {
     ROS_DEBUG("input feature: %d", (int)image.size());
@@ -67,7 +68,8 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
     for (auto &id_pts : image)
     {
         // 用特征点信息构造一个对象
-        FeaturePerFrame f_per_fra(id_pts.second[0].second, td);  // 此处的0代表第一个相机
+        // id_pts.second[0]表示vector<pair<int, Eigen::Matrix<double, 7, 1>>>中的第一个元素；由于本工程是单目，实际上也只有一个元素
+        FeaturePerFrame f_per_fra(id_pts.second[0].second, td);
 
         int feature_id = id_pts.first;
         // 在已有的id中寻找是否是有相同的特征点
@@ -85,6 +87,8 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
         // 如果这是一个已有的特征点，就在对应的“组织”下增加一个帧属性
         else if (it->feature_id == feature_id)
         {
+            // xc's todo: 并没有记录帧号，后面是如何知道这个特征点信息是在那一帧下的？：
+            //  从start_frame开始递增即可，这里跟ORB-SLAM3的特征点法不同，一旦某个特征点在某一帧不可见，那么在后面的帧都不可见，可见的帧一定是连续的
             it->feature_per_frame.push_back(f_per_fra);
             last_track_num++;   // 追踪到上一帧的特征点数目
         }
@@ -93,13 +97,18 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
     if (frame_count < 2 || last_track_num < 20)
         return true;
 
+#if 0
+    std::cout << "feature.size = " << feature.size() << std::endl;  // 并不会一直膨胀
+#endif
+
     for (auto &it_per_id : feature)
     {
         // 计算的实际上是frame_count-1,也就是前一帧是否为关键帧
         // 因此起始帧至少得是frame_count - 2,同时至少覆盖到frame_count - 1帧（也就是被它看到）
         /**
-         * notes: 实际上就是某个特征点能够同时被倒数第三帧和倒数第二帧看到
+         * notes: 实际上就是某个特征点至少能够同时被倒数第三帧和倒数第二帧看到
          */
+        // xc's todo: 随着系统的运行，feature会不断的膨胀，那么还是会一直执行这个判断吗？有必要对所有的feature进行判断吗？:经过测试，后面会对feature处理，从而使得feature不会一直膨胀
         if (it_per_id.start_frame <= frame_count - 2 &&
             it_per_id.start_frame + int(it_per_id.feature_per_frame.size()) - 1 >= frame_count - 1)
         {
@@ -110,6 +119,7 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
     // 这个和上一帧没有相同的特征点
     if (parallax_num == 0)
     {
+        // xc's todo: 没有跟踪到的特征点该怎么办？系统跟踪失败重定位？
         return true;
     }
     else
@@ -117,7 +127,11 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
         ROS_DEBUG("parallax_sum: %lf, parallax_num: %d", parallax_sum, parallax_num);
         ROS_DEBUG("current parallax: %lf", parallax_sum / parallax_num * FOCAL_LENGTH);
         // 看看平均视差是否超过一个阈值
-        return parallax_sum / parallax_num >= MIN_PARALLAX;
+#if 0
+        std::cout << "parallax_sum / parallax_num * FOCAL_LENGTH = " << parallax_sum / parallax_num * FOCAL_LENGTH << std::endl;
+        std::cout << "parallax_sum / parallax_num = " << parallax_sum / parallax_num << std::endl;
+#endif
+        return parallax_sum / parallax_num >= MIN_PARALLAX;  // MIN_PARALLAX已经使用虚拟焦距处理过了
     }
 }
 
@@ -427,14 +441,15 @@ void FeatureManager::removeFront(int frame_count)
     }
 }
 
-// xc's todo: 此处使用的是归一化的相机坐标系的坐标，如果按照针孔模型的话，要达到10的间隔，说明像素间隔有几千了，是否在前面做了什么处理？
+// xc's todo: 此处使用的是归一化的相机坐标系的坐标，如果按照针孔模型的话，要达到10的间隔，说明像素间隔有几千了，是否在前面做了什么处理？：阈值MIN_PARALLAX已经使用虚拟焦距处理过了
+// 仅仅由FeatureManager::addFeatureCheckParallax调用
 double FeatureManager::compensatedParallax2(const FeaturePerId &it_per_id, int frame_count)
 {
     //check the second last frame is keyframe or not
     //parallax between second last frame and third last frame
     // 找到相邻两帧
-    const FeaturePerFrame &frame_i = it_per_id.feature_per_frame[frame_count - 2 - it_per_id.start_frame];
-    const FeaturePerFrame &frame_j = it_per_id.feature_per_frame[frame_count - 1 - it_per_id.start_frame];
+    const FeaturePerFrame &frame_i = it_per_id.feature_per_frame[frame_count - 2 - it_per_id.start_frame];  // 倒数第三帧
+    const FeaturePerFrame &frame_j = it_per_id.feature_per_frame[frame_count - 1 - it_per_id.start_frame];  // 倒数第二帧
 
     double ans = 0;
     Vector3d p_j = frame_j.point;
@@ -459,6 +474,19 @@ double FeatureManager::compensatedParallax2(const FeaturePerId &it_per_id, int f
     double v_i_comp = p_i_comp(1) / dep_i_comp;
     double du_comp = u_i_comp - u_j, dv_comp = v_i_comp - v_j;
 
+    /**
+     * 对去畸变的归一化相机系而言：
+     * u = fx * x + cx, v = fy * y + cy
+     * (u2 - u1)^2 + (v2 - v1)^2 = fx^2 * (x2 - x1)^2 + fy^2 * (y2 - y1)^2
+     *
+     * 本系统中大量使用虚拟焦距来做统一的阈值处理，但是如果fx!=fy，那么使用一个虚拟焦距来处理的话并不一定合适，尤其是二者相差较大的时候，最好使用两个虚拟焦距
+     * 比如在这里，使用统一的虚拟焦距f，那么有[(u2 - u1)^2 + (v2 - v1)^2] / f^2 = (fx/f)^2 * [(x2 - x1)^2 + (fy/fx)^2 * (y2 - y1)^2]，很显然，后面中括号里面的表达式并不是归一化相机系下的距离
+     * 而在这里直接使用了归一化相机系下的距离来与阈值判断，这显然是不合适的
+     *
+     * 合理的设想：设置两个虚拟焦距f1和f2，且f1 / fx = f2 / fy，但是实际上在fx和fy位置的情况下，不可能设置出f1和f2；因此，此工程实际上限制的fx和fy的相对大小，也就是此工程要求fx和fy尽量接近
+     */
+
+    // 从函数的调用逻辑看，这里传入的point的坐标一定是去畸变的归一化相机系坐标，来源是estimator_node.cpp：xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
     ans = max(ans, sqrt(min(du * du + dv * dv, du_comp * du_comp + dv_comp * dv_comp)));
 
     return ans;

@@ -101,7 +101,8 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
 {
     if (!first_imu)
     {
-        first_imu = true;
+        first_imu = true;  // 初始化时候为false
+        // acc_0和gyr_0并不是表示初始的IMU信息，而是上一帧的信息
         acc_0 = linear_acceleration;
         gyr_0 = angular_velocity;
     }
@@ -109,23 +110,26 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
     // 由于预积分是帧间约束，因此第1个预积分量实际上是用不到的
     if (!pre_integrations[frame_count])
     {
+        // 初始化的时候都是空，还有这里new出来后并没有return，而是继续往后面运行
         pre_integrations[frame_count] = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
     }
     // 所以只有大于0才处理
-    if (frame_count != 0)
+    if (frame_count != 0)  // 第一帧不处理
     {
         // 保存dt、acc、gyr，并计算雅克比和协方差
+        // 注意：即使pre_integrations[frame_count]刚刚new出来，也会做IMU预积分，这也是为什么IMU头部没有插值的原因
         pre_integrations[frame_count]->push_back(dt, linear_acceleration, angular_velocity);
         //if(solver_flag != NON_LINEAR)
             // 这个量用来做初始化用的
-            tmp_pre_integration->push_back(dt, linear_acceleration, angular_velocity);
+            tmp_pre_integration->push_back(dt, linear_acceleration, angular_velocity);  // 在estimator.processImage中new
         // 保存传感器数据
+        // dt_buf保存的是所有的IMU信息，当然是分vector存储每一个区间的IMU信息；而IntegrationBase中仅仅存放当前区间中的IMU信息
         dt_buf[frame_count].push_back(dt);
         linear_acceleration_buf[frame_count].push_back(linear_acceleration);
         angular_velocity_buf[frame_count].push_back(angular_velocity);
         // 又是一个中值积分，更新滑窗中状态量，本质是给非线性优化提供可信的初始值
         int j = frame_count;         
-        Vector3d un_acc_0 = Rs[j] * (acc_0 - Bas[j]) - g;
+        Vector3d un_acc_0 = Rs[j] * (acc_0 - Bas[j]) - g;  // 此时Rs[j]还没有更新
         Vector3d un_gyr = 0.5 * (gyr_0 + angular_velocity) - Bgs[j];
         Rs[j] *= Utility::deltaQ(un_gyr * dt).toRotationMatrix();
         Vector3d un_acc_1 = Rs[j] * (linear_acceleration - Bas[j]) - g;

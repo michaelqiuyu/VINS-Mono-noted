@@ -54,7 +54,7 @@ void readParameters(ros::NodeHandle &n)
     SOLVER_TIME = fsSettings["max_solver_time"];    // 单次优化最大求解时间
     NUM_ITERATIONS = fsSettings["max_num_iterations"];  // 单次优化最大迭代次数
     MIN_PARALLAX = fsSettings["keyframe_parallax"]; // 根据视差确定关键帧
-    MIN_PARALLAX = MIN_PARALLAX / FOCAL_LENGTH;
+    MIN_PARALLAX = MIN_PARALLAX / FOCAL_LENGTH;  // 已经使用统一的焦距做了转换
 
     std::string OUTPUT_PATH;
     fsSettings["output_path"] >> OUTPUT_PATH;

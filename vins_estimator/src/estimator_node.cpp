@@ -303,6 +303,16 @@ void process()
             {
                 double t = imu_msg->header.stamp.toSec();
                 double img_t = img_msg->header.stamp.toSec() + estimator.td;
+
+                /**
+                 * 这里仅仅只是对IMU集合的尾部做了插值，对头部没有做插值，也就是实际上没有与IMAGE对齐的IMU信息
+                 * 如果单单从这里看的话，这里的逻辑是有问题的，但是在estimator.processIMU中，对第一帧IMU也做了预积分，通常来讲，第一帧是不可以做IMU预积分的
+                 * 在IMU第一帧的时候做IMU预积分的策略是认为与IMAGE对齐的IMU也是IMU的第一帧，从而可以做IMU预积分
+                 *
+                 * 这样写的坏处：
+                 *      1. 代码可读性太差
+                 *      2. 这里实际上认为起始的与IMAGE对齐的IMU信息与IMU集合的第一帧完全相同，这样做的精度弱于对头部也插值
+                 */
                 if (t <= img_t)
                 { 
                     if (current_time < 0)
@@ -395,6 +405,8 @@ void process()
                 xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
                 /**
                  * notes: 对于双目而言，同一个特征点可能左边出现一次，右边出现一次
+                 *
+                 * 对某个特征点，其在哪个相机中被看到，看到的信息是什么
                  */
                 image[feature_id].emplace_back(camera_id,  xyz_uv_velocity);
             }
