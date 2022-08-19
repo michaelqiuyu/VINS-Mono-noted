@@ -222,11 +222,18 @@
 				3.1 addFeatureCheckParallax
 					3.1.1 对当前图像帧，遍历特征点，如果这个特征点已经在特征点列表feature中，那么直接将特征点信息添加到这个特征点中，并令跟踪到的特征点数目last_trck_num递增；否则，新建一个特征点，并将特征点信息添加到其中，并将这个特征点添加到特征点列表feature中
 					3.1.2 如果帧号小于2或者跟踪到的特征点的数量少于20，那么直接结束，认为当前帧是一个
+					3.1.3 遍历feature，如果某个特征点能够同时被倒数第三帧和倒数第二帧看到，就执行FeatureManager::compensatedParallax2：
+						1. 计算给定的特征点在frame-2和frame-1中的两帧的去畸变的归一化相机系的坐标的距离，用于视差的判断
+						2. parallax_num递增
+					3.1.4 如果parallax_num为0，那么直接返回true，否则，就计算视差的均值，并与给定的阈值比较，如果大于等于阈值，就返回true；
 
 				3.2 FeaturePerFrame中保存的是特征点的信息（去畸变的归一化相机系坐标和图像坐标和速度）和时间延迟；FeaturePerId中保存的是特征点的id和帧号（new的时候的帧号表示起始帧），还会标记使用的次数，估计的深度（初始值为-1），求解的状态（初始未求解-0，1-求解成功，2-求解失败）
 
+				3.3 如果addFeatureCheckParallax为true，那么就将marginalization_flag置为MARGIN_OLD，否则将其置为MARGIN_SECOND_NEW；并将当前帧的header保存到estimator中的Headers中
 
-FeatureManager::compensatedParallax2：计算给定的特征点在frame-2和frame-1中的两帧的去畸变的归一化相机系的坐标的距离
+				FeatureManager::getCorresponding: 遍历feature，得到能够同时被frame_count_l和frame_count_r看到的特征点，获取所有的满足条件的特征点在这两帧中的去畸变的归一化相机系坐标
+
+
 
 			4. 打印统计信息printStatistics：
 				4.1 

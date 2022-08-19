@@ -177,9 +177,9 @@ vector<pair<Vector3d, Vector3d>> FeatureManager::getCorresponding(int frame_coun
             int idx_l = frame_count_l - it.start_frame;
             int idx_r = frame_count_r - it.start_frame;
 
-            a = it.feature_per_frame[idx_l].point;
+            a = it.feature_per_frame[idx_l].point;  // 在frame_count_l中的去畸变的归一化相机系坐标
 
-            b = it.feature_per_frame[idx_r].point;
+            b = it.feature_per_frame[idx_r].point;  // 在frame_count_r中的去畸变的归一化相机系坐标
             
             corres.push_back(make_pair(a, b));  // 返回相机坐标系下的坐标对
         }

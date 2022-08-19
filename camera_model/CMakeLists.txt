@@ -13,7 +13,16 @@ find_package(catkin REQUIRED COMPONENTS
 find_package(Boost REQUIRED COMPONENTS filesystem program_options system)
 include_directories(${Boost_INCLUDE_DIRS})
 
-find_package(OpenCV 3.4.5 REQUIRED)
+set(CMAKE_PREFIX_PATH "/usr/local/include/opencv3.4.5")
+find_package(OpenCV 3)
+if(NOT OpenCV_FOUND)
+    find_package(OpenCV 3.0)
+    if(NOT OpenCV_FOUND)
+        message(FATAL_ERROR "OpenCV > 3.0 not found.")
+    endif()
+endif()
+MESSAGE("OPENCV VERSION:")
+MESSAGE(${OpenCV_VERSION})
 
 # set(EIGEN_INCLUDE_DIR "/usr/local/include/eigen3")
 find_package(Ceres REQUIRED)

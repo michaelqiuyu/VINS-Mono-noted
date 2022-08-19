@@ -120,7 +120,7 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
         // 注意：即使pre_integrations[frame_count]刚刚new出来，也会做IMU预积分，这也是为什么IMU头部没有插值的原因
         pre_integrations[frame_count]->push_back(dt, linear_acceleration, angular_velocity);
         //if(solver_flag != NON_LINEAR)
-            // 这个量用来做初始化用的
+            // 这个量用来做初始化用的，注意当frame_count=0的时候是个空指针
             tmp_pre_integration->push_back(dt, linear_acceleration, angular_velocity);  // 在estimator.processImage中new
         // 保存传感器数据
         // dt_buf保存的是所有的IMU信息，当然是分vector存储每一个区间的IMU信息；而IntegrationBase中仅仅存放当前区间中的IMU信息
@@ -163,10 +163,12 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     // all_image_frame用来做初始化相关操作，他保留滑窗起始到当前的所有帧
     // 有一些帧会因为不是KF，被MARGIN_SECOND_NEW，但是及时较新的帧被margin，他也会保留在这个容器中，因为初始化要求使用所有的帧，而非只要KF
     ImageFrame imageframe(image, header.stamp.toSec());
+    // 对于图像的第一帧，其tmp_pre_intergration为nullptr，也对应了图像第一帧之前的IMU不做预积分，不使用
     imageframe.pre_integration = tmp_pre_integration;
     // 这里就是简单的把图像和预积分绑定在一起，这里预积分就是两帧之间的，滑窗中实际上是两个KF之间的
     // 实际上是准备用来初始化的相关数据
     all_image_frame.insert(make_pair(header.stamp.toSec(), imageframe));
+    // tmp_pre_integration是对每一个普通帧都做预积分
     tmp_pre_integration = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
 
     // 没有外参初值

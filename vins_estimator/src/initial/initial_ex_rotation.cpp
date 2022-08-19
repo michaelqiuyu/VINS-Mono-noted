@@ -14,7 +14,7 @@ bool InitialEXRotation::CalibrationExRotation(vector<pair<Vector3d, Vector3d>> c
     frame_count++;
     // 根据特征关联求解两个连续帧相机的旋转R12，2→1
     Rc.push_back(solveRelativeR(corres));
-    Rimu.push_back(delta_q_imu.toRotationMatrix());  // 用来计算核函数的
+    Rimu.push_back(delta_q_imu.toRotationMatrix());
     // 通过外参把imu的旋转转移到相机坐标系
     /**
      * author: xiongchao
@@ -25,7 +25,7 @@ bool InitialEXRotation::CalibrationExRotation(vector<pair<Vector3d, Vector3d>> c
      *      3. 之所以不断求解，而不是最后求解一次的原因是仅仅使用两帧求解的参数不一定具有普遍性（泛化能力）
      *      4. ric.inverse() * delta_q_imu * ric = Rc1i1 * Ri1i2 * Ri2c2 = Rc1c2，应该与Rc[i]接近
      */
-    Rc_g.push_back(ric.inverse() * delta_q_imu * ric);  // ric是上一次求解得到的外参
+    Rc_g.push_back(ric.inverse() * delta_q_imu * ric);  // ric是上一次求解得到的外参，Rc_g用来计算核函数的
 
     Eigen::MatrixXd A(frame_count * 4, 4);
     A.setZero();
