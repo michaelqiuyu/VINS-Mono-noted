@@ -13,4 +13,3 @@ test/
 test.launch
 .vscode/
 cmake-build-debug/
-camera_model/CMakeLists.txt
