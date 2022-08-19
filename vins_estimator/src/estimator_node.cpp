@@ -305,7 +305,7 @@ void process()
                 double img_t = img_msg->header.stamp.toSec() + estimator.td;
 
                 /**
-                 * 这里仅仅只是对IMU集合的尾部做了插值，对头部没有做插值，也就是实际上没有与IMAGE对齐的IMU信息
+                 * 这里仅仅只是对IMU集合的尾部做了插值，对头部没有做插值，也就是实际上没有与IMAGE对齐的IMU信息，从理论上构建的预积分不是两帧图像之间的预积分
                  * 如果单单从这里看的话，这里的逻辑是有问题的，但是在estimator.processIMU中，对第一帧IMU也做了预积分，通常来讲，第一帧是不可以做IMU预积分的
                  * 在IMU第一帧的时候做IMU预积分的策略是认为与IMAGE对齐的IMU也是IMU的第一帧，从而可以做IMU预积分
                  *
