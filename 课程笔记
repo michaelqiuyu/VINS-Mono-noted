@@ -231,8 +231,171 @@
 
 				3.3 如果addFeatureCheckParallax为true，那么就将marginalization_flag置为MARGIN_OLD，否则将其置为MARGIN_SECOND_NEW；并将当前帧的header保存到estimator中的Headers中
 
-				FeatureManager::getCorresponding: 遍历feature，得到能够同时被frame_count_l和frame_count_r看到的特征点，获取所有的满足条件的特征点在这两帧中的去畸变的归一化相机系坐标
+				3.4 将当前帧的信息包装成ImageFrame（所有特征点的信息以及时间），令当前帧的预积分为tmp_pre_integration（对于第一帧而言是nullputr，也符合前面的第一帧图像帧之前的IMU信息不处理），后面才开始new，实际上new的是下次进入函数给当前帧的预积分赋值的
 
+				3.5 如果ESTIMATE_EXTRINSIC等于2，并且帧号不等于0
+					3.5.1 取出当前帧及其前一帧共同看到的角点FeatureManager::getCorresponding: 
+						1. 遍历feature，得到能够同时被frame_count_l和frame_count_r看到的特征点，获取所有的满足条件的特征点在这两帧中的去畸变的归一化相机系坐标
+
+					3.5.2 执行相机与IMU的旋转外参标定CalibrationExRotation：
+						1. 根据当前帧与其前一帧的匹配的角点，计算两帧图像之间的相对位姿solveRelativeR：
+							1.1 如果匹配数量少于9，那么直接返回单位阵；否则，根据匹配信息，计算本质矩阵E，并对E进行R、t分解，获得四组解
+							1.2 testTriangulation：获取内点的比例
+								1.2.1 cv::triangulatePoints：执行DLT三角化，计算三维点，并获得深度值为正数的点的比例
+							1.3 获得内点比例最多的那一组解并返回此值
+						2. 将两帧图像的相对旋转添加到Rc之中，将两帧IMU之间预积分的相对旋转添加到Rimu中；获取上一次优化的ric，并据此计算ric.inverse()*delta_q_imu * ric，这个值理论上应该与此时两帧图像的相对旋转相等，但是由于误差，不会完全相等，将这个值添加到Rc_g中，在我们信任ric（根据前面frame_count - 1帧计算的结果，在frame_count进入之前）的前提，如果仅仅使用frame_count这一帧，也能够计算外参，但是这个值就评价了此时计算的准确性；而后面我们实际上是使用所有的frame_count帧来进行计算，每一帧的图像与imu数据的准确度是不同的，应该使用不同的权重来进行计算，因此，使用这个值来映射权重，构建加权最小二乘
+						3. 使用所有的frame_count帧构建加权最小二乘计算外参计算外参，并将结果赋值给ric
+						4. 获取A的奇异值中的第三小的那个奇异值，如果其frame_count>=window_size并且这个奇异值大于0.25，那么就将ric赋值给calib_ric_result，并返回true；否则，返回false
+
+					3.5.3 如果标定成功，那么将标定结果存储到ric和RIC中，并将ESTIMATE_EXTRINSIC设置为1
+
+				3.6 如果solver_flag为initial，如果frame_count等于window_size，那么往下面执行，否则frame_count递增
+					3.6.1 初始化result为false
+
+					3.6.2 如果ESTIMATE_EXTRINSIC不等于2并且距离initial_timestamp大于0.1秒：
+						1. result = initialStructure：
+							1.1 判断IMU的激励是否足够：
+								1.1.1 对所有的预积分，根据其delta_v计算加速度，并计算这些加速度的方差和标准差
+								1.1.2 如果标准差小于0.25，就认为激励不够，但此时不会执行任何逻辑操作，只会打印一条语句
+
+							1.2 执行一个global sfm
+								1.2.1 组织特征点的信息：遍历特征点管理器中的所有特征点，对每一个特征点，获取观测到这个特征点的图像的信息（也就是帧号、像素坐标和去畸变的归一化相机系坐标等），并将这些信息存储到sfm_f
+								1.2.2 计算枢纽帧，并计算枢纽帧到frame_count对应的那一帧之间的相对位姿relativePose：
+									1. 枢纽帧的标准：距离最后一帧不会太远，有足够的共视特征点，用于计算相对位姿；距离又不能太近（用视差判断），太近使用本质矩阵恢复的R、t的稳定性就不够
+									
+									2. 遍历窗口中的图像，获取这一帧图像与最后一帧之间的共视，如果共视的特征点不大于20，那么就执行下一帧；否则，就计算两帧之间的平均视差，如果平均视差大于30，并且相对位子能够正常计算的话，就认为这一帧就是枢纽帧了，两帧之间相对位姿计算方法solveRelativeRT：
+										2.1 如果共视的角点数量小于15，直接返回false，否则
+										2.2 利用共视的特征点计算本质矩阵E（使用opencv的接口，并配置ransac模式），然后使用cv::recoverPose恢复R、t：
+											2.2.1 使用decomposeEssentialMat计算得到4组解，具体求解方法可以参照SLAM14讲
+											2.2.2 将传入的图像坐标根据内参矩阵转换到归一化相机系下
+											2.2.3 对每一组解，通过DLT三角化得到三维点，并计算在两个相机下的深度均为正且深度均在50以内的特征点的数量
+											2.2.4 与给定的mask做“与”运算（用于剔除不计数的特征点）；返回符合要求的特征点数目最多的那一组解
+										2.3 需要注意的是，上面计算的位姿枢纽帧→最后一帧；输出的时候会按照最后一帧→枢纽帧的形式输出
+										2.4 计算内点数量，如果内点数量在12以上，那么就认为计算正确，返回true，否则返回false
+
+									3. 如果能够得到满足要求的枢纽帧，那么就返回true，否则返回false
+
+							1.3 进行SFM求解，如果求解失败就将marginalization_flag赋值为MARGIN_OLD并直接结束，否则继续玩后面执行
+								1.3.1 设置枢纽帧的相机系为世界系，得到枢纽帧和最后一帧的位姿，并添加到相应变量中；需要注意的是，在后面的处理中，统一使用Tcw，因此需要将位姿都转化为这种形式
+								
+								1.3.2 从帧号为l（也就是枢纽帧）遍历到倒数第二帧，除了枢纽帧之外，对每一帧做pnp求解位姿，如果求解失败就直接返回false结束，否则，与最后一帧做两帧三角化，注意，枢纽帧不需要再做pnp了，只需要做两帧三角化即可
+									1. solveFrameByPnP：
+										1.1 使用上一帧的R、t作为初始值；已有的地图点是前面的帧与最后一帧三角化得到，因此当前求解的这一帧一定能够看到这些三维点
+										1.2 遍历sfm_f中的特征点，获取其中有深度值的特征点，并将这个特征点在当前帧的归一化相机系坐标和世界系坐标分别保存
+										1.3 如果匹配的2D-3D数量不足15，那么会打印“跟踪不稳定”，如果少于10，那么会直接返回false，认为pnp求解失败
+										1.4 使用opencv的接口solvePnP求解这个pnp问题，并使用初始值，调用的是CV_ITERATIVE方法，也就是将其建模为重投影误差最小化的问题，使用LM进行求解
+										1.5 如果求解失败则返回false，如果求解成功，就将求得的旋转和平移传递给相关参数，并返回true
+
+									2. triangulateTwoFrames：
+										2.1 遍历sfm_f中存储的特征点，如果这个点已经三角化了(state为true)，那么直接continue；否则
+										2.2 如果这个特征点能够同时被指定的两帧看到，就对这个特征点执行三角化操作，并将三维坐标系保存，然后将其state赋值为true
+
+								1.3.3 从l+1开始直到倒数第二帧，对每一帧，都与枢纽帧l进行三角化，计算相应地图点的深度；前面三角化的特征点都是最后一帧能够看到的，还有大量的最后一帧看不到的特征点没有三角化，因此才会有这里的操作；实际上，这里的操作依然不够完整，因为还有特征点既不能被枢纽帧看到，也不能被最后一帧看到，这些特征点就没有被三角化出来，不过后面会将这些特征点三角化出来
+
+								1.3.4 按照倒序的方式求解枢纽帧前面的图像的位姿，并与枢纽帧做两帧之间的三角化
+
+								1.3.5 遍历sfm_f中的所有特征点，如果其已经三角化了，那么便不处理，如果其观测少于两帧，那么也不处理；否则获取其观测的第一帧和最后一帧，通过两帧三角化将这个特征点的世界系坐标计算出来
+
+								1.3.6 构建一个全局BA用于求解当前这个单目视觉slam系统：
+									1. 构建一个problem；添加参数块，包括旋转（使用四元数）和平移，构建重投影误差用于优化（实际上这里是用的是归一化相机系下的残差）
+
+							1.4 计算all_image_frame中所有帧对应的位姿
+								1.4.1 如果图像和IMU正好对应，那么直接将这一帧认为是关键帧，并计算IMU的旋转和平移
+								1.4.2 如果这一帧没有与IMU对应，那么认为其是普通帧，并令距离其最近的一帧关键帧作为其位姿的初始值，然后遍历其特征点获取其特征点对应的三维点（如果有的话），构建2D-3D匹配，然后调用opencv的solvePnP接口计算位姿
+								1.4.3 将计算的结果保存到当前帧的信息中
+
+							1.5 视觉惯性对齐visualInitialAlign，如果对齐正确，就返回true，否则，就返回false：
+								1.5.1 视觉和IMU对齐VisualIMUAlignment：
+									1 陀螺仪零偏初始化solveGyroscopeBias：
+										1.1 思路：
+								            1.1.1 通过相机位姿和相机与IMU的外参计算两帧IMU之间的相对旋转（这个不含有陀螺仪零偏）；预积分也能得到两帧之间的相对旋转；二者理论上应该相等
+								            1.1.2 由于陀螺仪零偏初始为0，因此不会严格相等，因此可以构建最小二乘进行陀螺仪零偏的求解
+								            1.1.3 二者不等的原因当然不仅仅是陀螺仪零偏，还有视觉估计的误差，预积分的误差（中值法本身自带误差）等；因此这里实际上是调整陀螺仪零偏使其适应视觉的结果
+								      
+								        1.2 计算过程：
+								            1.2.1 qbk_c0 = qbk_ck * qck_c0，这里的旋转都是已知的，因此可以计算qbk_c0
+								            1.2.2 qbk_bk+1 = qbk_c0 * qc0_bk+1，这里的旋转都是已知的
+								            1.2.3 qbk_bk+1.inv * rbk_bk+1的虚部应该是零向量，据此即可构建最小二乘问题，当然rbk_bk+1 = rbk_bk+1_观测 * (1, 0.5 * Jbw * delta_bw)
+								            1.2.4 执行变换qbk_bk+1.inv * rbk_bk+1_观测 * (1, 0.5 * Jbw * delta_bw) = I(q) → (1, 0.5 * Jbw * delta_bw) = rbk_bk+1_观测.inv * qbk_bk+1
+								            1.2.5 均取虚部即可构建一个Ax = b的模型
+								            1.2.6 由于k的取值不唯一，因此模型转变为∑||Ai * x - bi||^2 → x.t() * ∑Ai.t() * Ai * x - ∑(2 * bi.t() * Ai) * x + C
+								            1.2.7 令A =  ∑Ai.t() * Ai，B = ∑(bi.t() * Ai)，则问题转化为min(x.t() * A * x - 2 * B * x)
+								            1.2.8 上述问题为一个凸优化问题，有闭式解，即求解c
+
+								        1.3 将求解的零偏更新到每一帧的预积分中，并重新预积分一次（类似这种重新预积分的操作，最好少做，非常耗费时间）
+
+									2 视觉惯性对齐LinearAlignment，如果对齐成功就返回true，否则就返回false
+										2.1 优化变量是bk坐标系下的第k帧imu的速度（k=0, 1, ..., n），枢纽帧下的重力和尺度
+										2.2 通过平移和速度的预积分来构建最小二乘问题，观测数据来自IMU的预积分，平移通过相机与IMU的外参计算得到
+										2.3 如果尺度为负数或者求得的重力的模长与标准重力的模长相差超过1，那么认为求解失败，返回false，否则
+										2.4 重力精确化操作RefineGravity：
+											2.4.1 通过前面获得的重力的方向作为初值，在前面的建模中仅仅改变g_c0 = g_c0 * |g| / |g_c0| + w1 * b1 + w2 * b2，其中|g|表示实际的重力大小，b1和b2和当前的重力方向g_c0垂直
+											2.4.2 通过迭代的方式求解速度、重力和尺度
+										2.5 获取尺度参数，如果尺度为负数，那么直接返回false，否则返回true
+
+								1.5.2 如果视觉IMU对齐失败，那么直接返回false，否则继续执行
+
+								1.5.3 
+
+						2. 将当前帧的时间戳赋值给initial_timestamp，如果当前初始化失败，那么距离当前帧就得至少0.1秒才能再次初始化
+
+					3.6.3 如果result为true，那么
+						1. 将solver_flay设置为NON_LINEAR
+						2. solveOdometry：
+							2.1 
+
+						3. slideWindow
+							3.1 如果marginalization_flag为margin_old：
+								3.1.1 获取Headers中的第一帧的时间戳t_0，获取第一帧的旋转back_R0和平移back_P0(相机位姿)
+								3.1.2 如果frame_count不等于window_size，那么直接结束；否则
+									1. 从0开始遍历到window_size-1，将i对应的信息和i+1对应的信息互换
+									2. 将window_size-1对应的信息赋值给window_size对应的变量（作为初值），释放window_size对应的预积分并新建一个预积分，清空dt_buf、linear_acceleration_buf和angular_velocity_buf
+									3. 如果solve_flag等于initial，那么：
+										3.1 在all_image_frame中寻找t_0对应的那一帧，将其对应的预积分释放；遍历all_image_frame，将it_0前面的帧的预积分全部释放掉；在all_image_frame中将第一帧删除
+									4. slideWindowOld:
+										4.1 sum_of_back递增；如果solver_flag等于non_linear，那么shift_depth为true，否则为false
+										4.2 shift_depth为true：
+											4.2.1 根据前面记录的back_R0和back_P0计算被移除帧的旋转R0和平移P0（imu的位姿）；计算当前窗口中的最老帧对应的imu的旋转R1和平移P1
+											4.2.2 removeBackShiftDepth：
+												1. 遍历所有的特征点，如果特征点不能被移除的那一帧看到，那么只需要将其起始帧递减即可；
+												2. 如果特征点能够被移除的那一帧看到，那么首先将其观测中的已经移除的那一帧的信息删除，如果删除后这个特征点的观测的数量少于2，那么直接删除这个特征点，否则，将这个特征点在移除帧下的坐标转换到当前窗口第一帧的坐标系下，如果深度为正，就对estimated_depth正常赋值，否则就给estimated_depth赋值INIT_DEPTH，表示其初始的深度值
+										4.3 shift_depth为false，执行removeBack
+											4.3.1 遍历特征点，如果这个特征点的起始帧不等于0，也就是不能被已经移除的那一帧看到，那么其起始帧递减即可
+											4.3.2 如果这个特征点的起始帧等于0，也就是能够被已经移除的那一帧看到，那么首先在这个特征点的观测中删除有关被移除的那一帧的信息；如果删除后，这个特征点的观测信息为0，那么直接将这个特征点删除
+										4.4 注意，在removeBackShiftDepth中，特征点的观测少于2个就删除这个特征点；而在removeBack中，只有没有观测的时候才会删除特征点；可以看出，在还没有初始化的时候，删除的策略趋向于保守
+
+							3.2 如果marginalization_flag为MARGIN_SECOND_NEW：
+								3.2.1 如果frame_count不等于window_size，那么直接结束；否则
+								3.2.2 合并frame-1和frame对应的imu预积分，并将零偏等对应的信息更新
+								3.2.3 释放window_size对应的预积分并new一个新的；释放dt_buf、linear_acceleration_buf和angular_velocity_buf，后续会进行填充
+								3.2.4 slideWindowNew：sum_of_front递增，并执行removeFront：
+									1. 由于frame_count-1和frame_count合并作为frame_count-1帧了，因此需要对特征点做相应的变动
+									2. 遍历所有的特征点，如果这个特征点的起始观测是frame_count，那么直接将起始帧观测递减即可，否则
+									3. 判断特征点能够被移除的倒数第二帧（也就是frame_count-1对应的那一帧，并非像slideWindowOld一样，真的被删除了，而是与frame_count对应的那一帧合并了）看到，如果不能就什么也不做，否则，首先移除倒数第二帧的观测，然后判断这个特征点还有没有观测，没有的话就将这个特征点也删除
+
+						4. 移除无效的地图点f_manager.removeFailures：
+							4.1 
+
+						5. 存储滑窗里面最新的位姿到last_R和last_P中，存储滑窗中最老的位姿到last_R0和last_P0中
+
+					3.6.4 如果result为false，那么执行slideWindow
+
+				3.7 如果solver_flag不是initial
+					3.7.1 求解里程计solveOdometry
+
+					3.7.2 检测VIO是否正常failureDetection；如果检测到不正常：
+						1. failure_occur设置为1
+						2. clearState：
+							2.1 
+						3. setParameter：
+							3.1 
+						4. 直接结束
+
+					3.7.3 求解滑窗slideWindow
+
+					3.7.4 移除无效的地图点f_manager.removeFailures
+
+					3.7.5 清空key_poses，然后将滑窗中的位置存储到key_poses中；存储滑窗里面最新的位姿到last_R和last_P中，存储滑窗中最老的位姿到last_R0和last_P0中
 
 
 			4. 打印统计信息printStatistics：
@@ -241,7 +404,7 @@
 			5. 将图像的header的frame_id设置为world，之后执行一些可视化的操作：
 				5.1 pubOdometry(estimator, header)
 				5.2 pubKeyPoses(estimator, header)
-				5.3 pubCameraPose(estimator, header)
+				5.3 pubCameraPoe(estimator, header)
 				5.4 pubPointCloud(estimator, header)
 				5.5 pubTF(estimator, header)
 				5.6 pubKeyframe(estimator)
@@ -273,7 +436,10 @@ estimator中的g是在哪里赋值的？
 		
 			 
 
-
+代码中大量存在在归一化坐标系下处理问题：
+	1. 计算视差的时候
+	2. 初始化的GBA中
+这样做并没有理论依据，尤其是如果fx!=fy并且二者相差较大的时候，那么得到的结果将没有理论支持，有可能将一个没有权重的优化问题变为以及加权的优化问题，这是没有道理的
 
 
 

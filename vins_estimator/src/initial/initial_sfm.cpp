@@ -55,7 +55,7 @@ bool GlobalSFM::solveFrameByPnP(Matrix3d &R_initial, Vector3d &P_initial, int i,
 		{
 			if (sfm_f[j].observation[k].first == i)
 			{
-				Vector2d img_pts = sfm_f[j].observation[k].second;
+				Vector2d img_pts = sfm_f[j].observation[k].second;  // 这里实际上是去畸变的归一化相机系的x和y坐标
 				cv::Point2f pts_2(img_pts(0), img_pts(1));
 				pts_2_vector.push_back(pts_2);
 				cv::Point3f pts_3(sfm_f[j].position[0], sfm_f[j].position[1], sfm_f[j].position[2]);
@@ -118,12 +118,12 @@ void GlobalSFM::triangulateTwoFrames(int frame0, Eigen::Matrix<double, 3, 4> &Po
 	assert(frame0 != frame1);
 	for (int j = 0; j < feature_num; j++)	// feature_num是特征点总数
 	{
-		if (sfm_f[j].state == true)	// 已经三角化过了
+		if (sfm_f[j].state == true)	// 已经三角化过了：优化的点在于可以使用多视图来进行优化
 			continue;
 		bool has_0 = false, has_1 = false;
 		Vector2d point0;
 		Vector2d point1;
-		// 遍历该特征点的观测，看看是不能两帧都能看到
+		// 遍历该特征点的观测，看看是不能两帧都能看到：这里可以看出VINS-MONO的框架组织的不如ORB-SLAM，很多地方都需要遍历操作，而不是直接对抽象的对象（如frame）进行操作
 		for (int k = 0; k < (int)sfm_f[j].observation.size(); k++)
 		{
 			if (sfm_f[j].observation[k].first == frame0)
@@ -140,7 +140,7 @@ void GlobalSFM::triangulateTwoFrames(int frame0, Eigen::Matrix<double, 3, 4> &Po
 		if (has_0 && has_1)	// 如果都能被看到
 		{
 			Vector3d point_3d;
-			// 将这个特征点进行三角化
+			// 将这个特征点进行DLT三角化
 			triangulatePoint(Pose0, Pose1, point0, point1, point_3d);
 			sfm_f[j].state = true;	// 标志位置true
 			sfm_f[j].position[0] = point_3d(0);
@@ -170,7 +170,6 @@ void GlobalSFM::triangulateTwoFrames(int frame0, Eigen::Matrix<double, 3, 4> &Po
  * @return true 
  * @return false 
  */
-
 bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 			  const Matrix3d relative_R, const Vector3d relative_T,
 			  vector<SFMFeature> &sfm_f, map<int, Vector3d> &sfm_tracked_points)
@@ -179,13 +178,13 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 	//cout << "set 0 and " << l << " as known " << endl;
 	// have relative_r relative_t
 	// intial two view
-	// 枢纽帧设置为单位帧，也可以理解为世界系原点
+	// 枢纽帧设置为单位帧，也可以理解为世界系
 	q[l].w() = 1;
 	q[l].x() = 0;
 	q[l].y() = 0;
 	q[l].z() = 0;
 	T[l].setZero();
-	// 求得最后一帧的位姿
+	// 求得最后一帧的位姿：camera → world
 	q[frame_num - 1] = q[l] * Quaterniond(relative_R);
 	T[frame_num - 1] = relative_T;
 	//cout << "init q_l " << q[l].w() << " " << q[l].vec().transpose() << endl;
@@ -236,7 +235,7 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 		}
 		/**
 		 * notes:
-		 *      1. 这里按照l + 1~frame -1的顺序进行pnp求解和三角化的一个理由是：前面三角化的点 对后面的帧一定可见，因此pnp求解的匹配数目就会增加，求解的稳定性增强
+		 *      1. 这里按照l~frame-1的顺序进行pnp求解和三角化的一个理由是：前面三角化的点 对后面的帧一定可见，因此pnp求解的匹配数目就会增加，求解的稳定性增强
 		 */
 
 		// triangulate point based on the solve pnp result
@@ -246,6 +245,7 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 	// Step 2 考虑有些特征点不能被最后一帧看到，因此，fix枢纽帧，遍历枢纽帧到最后一帧进行特征点三角化
 	//3: triangulate l-----l+1 l+2 ... frame_num -2
 	for (int i = l + 1; i < frame_num - 1; i++)
+	    // 对后面求解枢纽帧之前的图像位姿非常重要
 		triangulateTwoFrames(l, Pose[l], i, Pose[i], sfm_f);
 	/**
 	 * notes: 这里并没有三角化枢纽帧到最后一帧之间的这些帧之间的三角化；这些特征点留在了step4中进行三角化
@@ -256,7 +256,12 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 	for (int i = l - 1; i >= 0; i--)
 	{
 		//solve pnp
-		// 这种情况就是后一帧先求解出来
+		// 这种情况就是后一帧先求解出来：如果直接求解第0帧的位姿，可能由于没有足够的2D-3D匹配导致位姿求解失败，倒序求解有利于缓解这个问题
+		/**
+		 * notes: 为什么枢纽帧之前的位姿使用倒序求解，枢纽帧之后的位姿使用顺序求解
+		 *      1. 枢纽帧之后顺序求解是因为枢纽帧到最后一帧的位姿已经已知了，那么按照顺序的求解方式，前面帧三角化的地图点会后面图像的求解有利
+		 *      2. 枢纽帧之前倒序求解是因为直接求解第0帧的位姿，可能由于没有足够的2D-3D匹配导致位姿求解失败，倒序求解有利于缓解这个问题，也就是后面帧与枢纽帧三角化的地图点有可能被前面帧看到
+		 */
 		Matrix3d R_initial = c_Rotation[i + 1];
 		Vector3d P_initial = c_Translation[i + 1];
 		if(!solveFrameByPnP(R_initial, P_initial, i, sfm_f))
@@ -278,7 +283,7 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 		if ((int)sfm_f[j].observation.size() >= 2)	// 只有被两个以上的KF观测到才可以三角化
 		{
 			Vector2d point0, point1;
-			// 取首尾两个KF，尽量保证两KF之间足够位移
+			// 取首尾两个KF，尽量保证两KF之间足够位移：为什么不使用所有观测来三角化尼，这样精确度会更高
 			int frame_0 = sfm_f[j].observation[0].first;
 			point0 = sfm_f[j].observation[0].second;
 			int frame_1 = sfm_f[j].observation.back().first;
@@ -306,13 +311,34 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 		cout << "solvePnP  t" << " i " << i <<"  " << t_tmp.x() <<"  "<< t_tmp.y() <<"  "<< t_tmp.z() << endl;
 	}
 */
+#if 0
+    std::cout << std::fixed << std::setprecision(15);
+    for (int j = 0; j < feature_num; j++)
+    {
+        if (sfm_f[j].state) {
+            int id = sfm_f[j].id;
+            if (10 <= id && 30 >= id)
+                std::cout << "id = " << id << ", position = " << sfm_f[j].position[0] << " " << sfm_f[j].position[1] << " " << sfm_f[j].position[2] << std::endl;
+        }
+    }
+#endif
 	//full BA
 	// Step 5 求出了所有的位姿和3d点之后，进行一个视觉slam的global BA
 	// 可能需要介绍一下ceres  http://ceres-solver.org/
 	ceres::Problem problem;
 	// 设置更新方式，不同的表示的更新方式是不同的
-	ceres::LocalParameterization* local_parameterization = new ceres::QuaternionParameterization();
+	ceres::LocalParameterization* local_parameterization = new ceres::QuaternionParameterization();  // 四元数采用的是右乘更新
 	//cout << " begin full BA " << endl;
+#if 0
+    double temp_position[frame_num][3];
+    for (int k = 0; k < feature_num; k++) {
+        if (sfm_f[k].state != true)    // 必须是三角化之后的，也就是有对应的世界系坐标
+            continue;
+        temp_position[k][0] = sfm_f[k].position[0];
+        temp_position[k][1] = sfm_f[k].position[1];
+        temp_position[k][2] = sfm_f[k].position[2];
+    }
+#endif
 	for (int i = 0; i < frame_num; i++)
 	{
 		//double array for ceres
@@ -324,6 +350,9 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 		c_rotation[i][1] = c_Quat[i].x();
 		c_rotation[i][2] = c_Quat[i].y();
 		c_rotation[i][3] = c_Quat[i].z();
+		// 只有对于特殊的参数块才需要使用AddParameterBlock
+		// 旋转是特殊的；后面对最后一帧的平移是固定的SetParameterBlockConstant，因此也需要添加参数块才能取出这一帧，否则会报找不到参数块的错误
+		// 需要注意的是，地图点的参数块并没有使用AddParameterBlock来添加，但是这并没有影响
 		problem.AddParameterBlock(c_rotation[i], 4, local_parameterization);
 		problem.AddParameterBlock(c_translation[i], 3);
 		// 由于是单目视觉slam，有七个自由度不可观，因此，fix一些参数块避免在零空间漂移
@@ -337,11 +366,16 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 			problem.SetParameterBlockConstant(c_translation[i]);
 		}
 	}
+
 	// 只有视觉重投影构成约束，因此遍历所有的特征点，构建约束
 	for (int i = 0; i < feature_num; i++)
 	{
-		if (sfm_f[i].state != true)	// 必须是三角化之后的
+		if (sfm_f[i].state != true)	// 必须是三角化之后的，也就是有对应的世界系坐标
 			continue;
+#if 0
+        problem.AddParameterBlock(position[i], 3);
+#endif
+
 		// 遍历所有的观测帧，对这些帧建立约束
 		for (int j = 0; j < int(sfm_f[i].observation.size()); j++)
 		{
@@ -349,9 +383,13 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 			ceres::CostFunction* cost_function = ReprojectionError3D::Create(
 												sfm_f[i].observation[j].second.x(),
 												sfm_f[i].observation[j].second.y());
-				// 约束了这一帧位姿和3d地图点
-    		problem.AddResidualBlock(cost_function, NULL, c_rotation[l], c_translation[l], 
-    								sfm_f[i].position);	 
+			// 约束了这一帧位姿和3d地图点
+    		problem.AddResidualBlock(cost_function, NULL, c_rotation[l], c_translation[l],
+    								sfm_f[i].position);  // 没有使用核函数
+#if 0
+            problem.AddResidualBlock(cost_function, NULL, c_rotation[l], c_translation[l],
+                                     position[i]);  // 没有使用核函数
+#endif
 		}
 
 	}
@@ -395,6 +433,19 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 		if(sfm_f[i].state)
 			sfm_tracked_points[sfm_f[i].id] = Vector3d(sfm_f[i].position[0], sfm_f[i].position[1], sfm_f[i].position[2]);
 	}
+
+#if 0
+    std::cout << std::fixed << std::setprecision(15);
+    for (int j = 0; j < feature_num; j++)
+    {
+        if (sfm_f[j].state) {
+            int id = sfm_f[j].id;
+            if (10 <= id && 30 >= id)
+                std::cout << "id = " << id << ", position = " << sfm_f[j].position[0] << " " << sfm_f[j].position[1] << " " << sfm_f[j].position[2] << std::endl;
+        }
+    }
+#endif
+
 	return true;
 
 }

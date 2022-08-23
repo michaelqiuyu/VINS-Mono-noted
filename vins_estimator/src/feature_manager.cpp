@@ -37,7 +37,7 @@ int FeatureManager::getFeatureCount()
     {
 
         it.used_num = it.feature_per_frame.size();
-
+        // 两帧以上看到就可以三角化地图点；不要是最后几帧才看到的；
         if (it.used_num >= 2 && it.start_frame < WINDOW_SIZE - 2)
         {
             cnt++;
@@ -193,6 +193,7 @@ void FeatureManager::setDepth(const VectorXd &x)
     for (auto &it_per_id : feature)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
+        // xc's todo: 经过测试，有大量观测大于等于2，但是起始帧大于等于window_size - 2的，这些特征点不处理吗？
         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
 
@@ -233,6 +234,7 @@ void FeatureManager::clearDepth(const VectorXd &x)
     for (auto &it_per_id : feature)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
+        // xc's todo: 经过测试，有大量观测大于等于2，但是起始帧大于等于window_size - 2的，这些特征点不处理吗？
         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
         it_per_id.estimated_depth = 1.0 / x(++feature_index);
@@ -246,15 +248,23 @@ void FeatureManager::clearDepth(const VectorXd &x)
  */
 VectorXd FeatureManager::getDepthVector()
 {
-    VectorXd dep_vec(getFeatureCount());
+    VectorXd dep_vec(getFeatureCount());  // 获得有效的地图点的数目，并且这些地图点不是从倒数第三帧才开始看到的
     int feature_index = -1;
     for (auto &it_per_id : feature)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
+#if 0
+//        std::cout << "it_per_id.used_num = " << it_per_id.used_num << std::endl;
+//        std::cout << "it_per_id.start_frame = " << it_per_id.start_frame << std::endl;
+        if (it_per_id.used_num >= 2 && it_per_id.start_frame >= WINDOW_SIZE - 2)
+            std::cout << "这个正常的地图点也不处理吗" << std::endl;
+
+#endif
+        // xc's todo: 经过测试，有大量观测大于等于2，但是起始帧大于等于window_size - 2的，这些特征点不处理吗？
         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
 #if 1
-        dep_vec(++feature_index) = 1. / it_per_id.estimated_depth;
+        dep_vec(++feature_index) = 1. / it_per_id.estimated_depth;  // 使用的是逆深度
 #else
         dep_vec(++feature_index) = it_per_id->estimated_depth;
 #endif
@@ -370,16 +380,16 @@ void FeatureManager::removeBackShiftDepth(Eigen::Matrix3d marg_R, Eigen::Vector3
         {
             Eigen::Vector3d uv_i = it->feature_per_frame[0].point;    // 取出归一化相机坐标系坐标
             it->feature_per_frame.erase(it->feature_per_frame.begin()); // 该点不再被原来的第一帧看到，因此从中移除
-            if (it->feature_per_frame.size() < 2)   // 如果这个地图点没有至少被两帧看到
+            if (it->feature_per_frame.size() < 2)   // 如果这个地图点没有至少被两帧看到：注意执行这个判断的时候已经删除了一个观测了
             {
                 feature.erase(it);  // 那他就没有存在的价值了
                 continue;
             }
             else    // 进行管辖权的转交
             {
-                Eigen::Vector3d pts_i = uv_i * it->estimated_depth; // 实际相机坐标系下的坐标
+                Eigen::Vector3d pts_i = uv_i * it->estimated_depth; // 起始相机坐标系下的坐标
                 Eigen::Vector3d w_pts_i = marg_R * pts_i + marg_P;  // 转到世界坐标系下
-                Eigen::Vector3d pts_j = new_R.transpose() * (w_pts_i - new_P);  // 转到新的最老帧的相机坐标系下
+                Eigen::Vector3d pts_j = new_R.transpose() * (w_pts_i - new_P);  // 转到新的最老帧的相机坐标系下，由于起始帧被移除了，因此需要重新计算起始帧下的坐标
                 double dep_j = pts_j(2);
                 if (dep_j > 0)  // 看看深度是否有效
                     it->estimated_depth = dep_j;    // 有效的话就得到在现在最老帧下的深度值
@@ -434,7 +444,7 @@ void FeatureManager::removeFront(int frame_count)
             int j = WINDOW_SIZE - 1 - it->start_frame;  // 倒数第二帧在这个地图点对应KF vector的idx
             if (it->endFrame() < frame_count - 1)   // 如果该地图点不能被倒数第二帧看到，那没什么好做的
                 continue;
-            it->feature_per_frame.erase(it->feature_per_frame.begin() + j); // 能被倒数第二帧看到，erase掉这个索引
+            it->feature_per_frame.erase(it->feature_per_frame.begin() + j); // 能被倒数第二帧看到，erase掉这个索引，也就是这个观测
             if (it->feature_per_frame.size() == 0)  // 如果这个地图点没有别的观测了
                 feature.erase(it);  // 就没有存在的价值了
         }

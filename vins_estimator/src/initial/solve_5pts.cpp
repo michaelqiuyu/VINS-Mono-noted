@@ -54,7 +54,7 @@ namespace cv {
         double cx = cameraMatrix.at<double>(0,2);
         double cy = cameraMatrix.at<double>(1,2);
 
-        // 转为归一化相机系坐标
+        // 转换为归一化相机系坐标
         points1.col(0) = (points1.col(0) - cx) / fx;
         points2.col(0) = (points2.col(0) - cx) / fx;
         points1.col(1) = (points1.col(1) - cy) / fy;
@@ -128,14 +128,16 @@ namespace cv {
         mask3 = mask3.t();
         mask4 = mask4.t();
 
-        // E仅使用了mask为1对应的点，因此这里需要做与运算
+        /**
+         * mask_的作用：表明哪些特征点是不用于计算内点数量的
+         */
 
         // If _mask is given, then use it to filter outliers.
         if (!_mask.empty())
         {
             Mat mask = _mask.getMat();
             CV_Assert(mask.size() == mask1.size());
-            bitwise_and(mask, mask1, mask1);
+            bitwise_and(mask, mask1, mask1);  // 更新mask1
             bitwise_and(mask, mask2, mask2);
             bitwise_and(mask, mask3, mask3);
             bitwise_and(mask, mask4, mask4);
@@ -230,12 +232,12 @@ bool MotionEstimator::solveRelativeRT(const vector<pair<Vector3d, Vector3d>> &co
         Eigen::Vector3d T;
         // cv -> eigen
         for (int i = 0; i < 3; i++)
-        {   
+        {
             T(i) = trans.at<double>(i, 0);
             for (int j = 0; j < 3; j++)
                 R(i, j) = rot.at<double>(i, j);
         }
-        // opencv得到的是T21,这里换成T12
+        // opencv得到的是T21（可以从recoverPose中三角化时候的投影矩阵得到）,这里换成T12
         Rotation = R.transpose();
         Translation = -R.transpose() * T;
         if(inlier_cnt > 12)

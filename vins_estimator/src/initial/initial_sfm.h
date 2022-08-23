@@ -16,8 +16,8 @@ using namespace std;
 struct SFMFeature
 {
     bool state;
-    int id;
-    vector<pair<int,Vector2d>> observation;
+    int id;  // 特征点的ID
+    vector<pair<int,Vector2d>> observation;  // 帧号以及去畸变的相机系归一化坐标的x和y
     double position[3];
     double depth;
 };
@@ -32,7 +32,6 @@ struct ReprojectionError3D
      * notes:
      *      1. 最后一维必须是残差结果
      *      2. 参数与AddResidualBlock函数中kernel function之后的参数对应
-     *
      */
 	template <typename T>
 	bool operator()(const T* const camera_R, const T* const camera_T, const T* point, T* residuals) const
@@ -43,7 +42,13 @@ struct ReprojectionError3D
 		// 得到该相机坐标系下的3d坐标
 		T xp = p[0] / p[2];
     	T yp = p[1] / p[2];	// 归一化处理
-			// 跟现有观测形成残差
+    	// 跟现有观测形成残差：注意这里使用的是归一化相机系下面的残差
+    	/**
+    	 * u = fx * x + cx, v = fy * y + cy
+    	 *
+    	 * (u - u0)^2 + (v - v0)^2 = fx^2 * (x - x0)^2 + fy^2 * (y - y0)^2 ！= (x - x0)^2 + (y - y0)^2
+    	 * 如果fx和fy并不接近，那么优化归一化相机系的残差相当于认为给重投影误差加了权重，这样做并不符合重投影误差的定义，其与重投影误差并不等效
+    	 */
     	residuals[0] = xp - T(observed_u);
     	residuals[1] = yp - T(observed_v);
     	return true;
@@ -59,7 +64,7 @@ struct ReprojectionError3D
 	     *      3-translation dimension
 	     *      3-point dimension
 	     */
-	  return (new ceres::AutoDiffCostFunction<
+	  return (new ceres::AutoDiffCostFunction<  // 自动求导需要重载一下括号运算符
 	          ReprojectionError3D, 2, 4, 3, 3>(
 	          	new ReprojectionError3D(observed_x,observed_y)));
 	}

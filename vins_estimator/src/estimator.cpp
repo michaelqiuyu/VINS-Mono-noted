@@ -1,5 +1,8 @@
 #include "estimator.h"
 
+int test_index = 0;
+int ini_num = 0;
+
 Estimator::Estimator(): f_manager{Rs}
 {
     ROS_INFO("init begins");
@@ -101,11 +104,25 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
 {
     if (!first_imu)
     {
+        // notes: 注意只有第一次使用IMU的时候才会执行这个逻辑，这个逻辑是为了在第一次构建IMU预积分的时候与第一帧图像对齐；
+        // 后面没有这个逻辑了，因为acc_0和gyr_0已经更新并与初始图像帧对齐了
+        // 这里的处理并不好，逻辑耦合太强了，可读性太差了
         first_imu = true;  // 初始化时候为false
         // acc_0和gyr_0并不是表示初始的IMU信息，而是上一帧的信息
         acc_0 = linear_acceleration;
         gyr_0 = angular_velocity;
+#if 0
+        std::cout << std::fixed << std::setprecision(15);
+        std::cout << "acc_0 = " << acc_0 << ", gry_0 = " << gyr_0 << std::endl;
+#endif
     }
+#if 0
+    if (pre_integrations[frame_count]) {
+        std::cout << "帧号：" << frame_count << "对应的预积分已经new出来" << std::endl;
+    } else {
+        std::cout << "帧号：" << frame_count << "对应的预积分还没有new出来" << std::endl;
+    }
+#endif
     // 滑窗中保留11帧，frame_count表示现在处理第几帧，一般处理到第11帧时就保持不变了
     // 由于预积分是帧间约束，因此第1个预积分量实际上是用不到的
     if (!pre_integrations[frame_count])
@@ -158,7 +175,11 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     ROS_DEBUG("%s", marginalization_flag ? "Non-keyframe" : "Keyframe");
     ROS_DEBUG("Solving %d", frame_count);
     ROS_DEBUG("number of feature: %d", f_manager.getFeatureCount());
-    Headers[frame_count] = header;
+    Headers[frame_count] = header;  // 对应的是当前预积分的结束时刻
+#if 0
+    std::cout << "frame_count = " << frame_count << std::endl;
+    std::cout << "Headers[frame_count]" << Headers[frame_count].stamp.toSec() << std::endl;
+#endif
 
     // all_image_frame用来做初始化相关操作，他保留滑窗起始到当前的所有帧
     // 有一些帧会因为不是KF，被MARGIN_SECOND_NEW，但是及时较新的帧被margin，他也会保留在这个容器中，因为初始化要求使用所有的帧，而非只要KF
@@ -182,8 +203,8 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
             // 因为预积分是相邻帧的约束，因为这里得到的图像关联也是相邻的
             vector<pair<Vector3d, Vector3d>> corres = f_manager.getCorresponding(frame_count - 1, frame_count);
             Matrix3d calib_ric;
-            if (initial_ex_rotation.CalibrationExRotation(corres, pre_integrations[frame_count]->delta_q, calib_ric))
-            {
+            // pre_integrations[frame_count]代表着从frame_count-1到frame_count之间的预积分
+            if (initial_ex_rotation.CalibrationExRotation(corres, pre_integrations[frame_count]->delta_q, calib_ric)) {
                 ROS_WARN("initial extrinsic rotation calib success");
                 ROS_WARN_STREAM("initial extrinsic rotation: " << endl << calib_ric);
                 ric[0] = calib_ric;  // ric表示多个相机与IMU的外参，这里只标定了第一个
@@ -194,6 +215,10 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         }
     }
 
+#if 0
+    std::cout << "frame_count = " << frame_count << std::endl;
+#endif
+
     if (solver_flag == INITIAL)
     {
         if (frame_count == WINDOW_SIZE) // 有足够的帧数
@@ -201,7 +226,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
             bool result = false;
             // 要有可信的外参值，同时距离上次初始化不成功至少相邻0.1s: 不成功的附近依然不会成功
             // Step 3： VIO初始化
-            if( ESTIMATE_EXTRINSIC != 2 && (header.stamp.toSec() - initial_timestamp) > 0.1)
+            if( ESTIMATE_EXTRINSIC != 2 && (header.stamp.toSec() - initial_timestamp) > 0.1)  // initial_timestamp初始化为0
             {
                result = initialStructure();
                initial_timestamp = header.stamp.toSec();
@@ -226,7 +251,8 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
                 slideWindow();
         }
         else
-            frame_count++;
+            // xc's todo: frame_count只在这里递增，如果上面初始化失败的话，frame_count就不变了吗？：frame_count到达window_size之后就不变了
+            frame_count++;  //
     }
     else
     {
@@ -260,6 +286,10 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         last_R0 = Rs[0];
         last_P0 = Ps[0];
     }
+
+#if 0
+    std::cout << "frame_count = " << frame_count << std::endl;
+#endif
 }
 
 /**
@@ -273,8 +303,24 @@ bool Estimator::initialStructure()
     TicToc t_sfm;
     // Step 1 check imu observibility：检测运动速度的方差
     {
+        // 此操作不会产生时机影响，即使IMU激励不够，也会往后面执行
+
+        /**
+         * 此处使用预积分的V，而不是直接使用加速度计测量的比力来计算的原因：
+         *      1. 预积分的V只需要用到IMU的测量值就可以计算
+         *      2. 如果要使用比力，那么a_w = Rwb * (f_b - ba - na) + g，此时需要知道Rwb，也就是需要知道IMU的位姿，这在初始化里面是未知的
+         *      3. 因此，这里使用delta_v来计算三个轴加速度方差的总和
+         *
+         * 做这个操作的原因：
+         *      1. IMU预积分是基于牛顿第二定律的，如果body不动或者匀速运动，那么aw=0，那么就没有办法积分出速度和加速度了，IMU预积分也无法计算了
+         *      2. 因此，这里的操作就是为了避免body静止或者匀速运动导致aw接近0
+         */
+        // xc's todo: 为什么使用加速度的标准差来判断激励，即使方差为0，也只能说明是匀加速运动而非匀速运动呀
         map<double, ImageFrame>::iterator frame_it;
         Vector3d sum_g;
+#if 0
+        Vector3d sum_v;
+#endif
         // 从第二帧开始检查imu
         for (frame_it = all_image_frame.begin(), frame_it++; frame_it != all_image_frame.end(); frame_it++)
         {
@@ -282,10 +328,21 @@ bool Estimator::initialStructure()
             Vector3d tmp_g = frame_it->second.pre_integration->delta_v / dt;
             // 累加每一帧带重力加速度的deltav：预积分中的delta_v
             sum_g += tmp_g;
+#if 0
+            Vector3d tmp_v = frame_it->second.pre_integration->delta_p / dt;
+            std::cout << "frame_it->second.pre_integration->delta_p = " << frame_it->second.pre_integration->delta_p << std::endl;
+            sum_v += tmp_v;
+#endif
         }
         Vector3d aver_g;
         aver_g = sum_g * 1.0 / ((int)all_image_frame.size() - 1);
         double var = 0;
+#if 0
+        Vector3d aver_v;
+        aver_v = sum_v * 1.0 / ((int)all_image_frame.size() - 1);
+        std::cout << "aver_v = " << aver_v << std::endl;
+        double var_v = 0;
+#endif
         for (frame_it = all_image_frame.begin(), frame_it++; frame_it != all_image_frame.end(); frame_it++)
         {
             double dt = frame_it->second.pre_integration->sum_dt;
@@ -296,9 +353,20 @@ bool Estimator::initialStructure()
              */
             var += (tmp_g - aver_g).transpose() * (tmp_g - aver_g);
             //cout << "frame g " << tmp_g.transpose() << endl;
+
+#if 0
+            Vector3d tmp_v = frame_it->second.pre_integration->delta_p / dt;
+            var_v += (tmp_v - aver_v).transpose() * (tmp_v - aver_v);
+#endif
+
         }
-        // 得到的标准差
+        // 得到的标准差：使用的是无偏估计的方差
         var = sqrt(var / ((int)all_image_frame.size() - 1));
+#if 0
+        var_v = sqrt(var_v / ((int)all_image_frame.size() - 1));
+        std::cout << "var = " << var << std::endl;
+        std::cout << "var_v = " << var_v << std::endl;
+#endif
         //ROS_WARN("IMU variation %f!", var);
         // 实际上检查结果并没有用
         if(var < 0.25)
@@ -322,9 +390,9 @@ bool Estimator::initialStructure()
         tmp_feature.id = it_per_id.feature_id;
         for (auto &it_per_frame : it_per_id.feature_per_frame)
         {
-            imu_j++;
+            imu_j++;  // 注意这里递增了，这样也解释了上面为什么减1
             Vector3d pts_j = it_per_frame.point;
-            // 索引以及各自坐标系下的坐标: 归一化相机系坐标
+            // 帧号以及去畸变的归一化相机系坐标
             tmp_feature.observation.push_back(make_pair(imu_j, Eigen::Vector2d{pts_j.x(), pts_j.y()}));
         }
         sfm_f.push_back(tmp_feature);
@@ -332,21 +400,69 @@ bool Estimator::initialStructure()
     Matrix3d relative_R;
     Vector3d relative_T;
     int l;
+    // 如果以枢纽帧为世界系，那么得到的位姿的表达应该是Twc，world代表枢纽帧，camera代表最后一帧
     if (!relativePose(relative_R, relative_T, l))
     {
         ROS_INFO("Not enough features or parallax; Move device around");
         return false;
     }
+#if 0
+    std::cout << "枢纽帧 = " << l << std::endl;
+    std::cout << "ini_num = " << ini_num++ << std::endl;
+#endif
     GlobalSFM sfm;
-    // 进行sfm的求解
+    // 进行sfm的求解：需要注意的是，relative_R和relative_T仅仅通过E得到，并没有经过优化环节，后续应该会有一个统一的GBA
     if(!sfm.construct(frame_count + 1, Q, T, l,
               relative_R, relative_T,
               sfm_f, sfm_tracked_points))
     {
+#if 0
+        std::cout << "求解失败1" << std::endl;
+#endif
         ROS_DEBUG("global SFM failed!");
         marginalization_flag = MARGIN_OLD;
         return false;
     }
+#if 1
+    std::cout << "求解失败2" << std::endl;
+    if (test_index < 1) {
+        map<double, ImageFrame>::iterator frame_it_;
+        map<int, Vector3d>::iterator it_;
+        frame_it_ = all_image_frame.begin();
+        std::cout << std::fixed << std::setprecision(15);
+        for (int i = 0; frame_it_ != all_image_frame.end( ); frame_it_++) {
+            cv::Mat r, rvec, t, D, tmp_r;
+            std::cout << "i = " << i << std::endl;
+            std::cout << "frame_it->first = " << frame_it_->first << std::endl;
+            std::cout << "Headers[i].stamp.toSec() = " << Headers[i].stamp.toSec() << std::endl;
+            i++;
+        }
+        test_index++;
+        return false;
+    }
+
+    std::cout << "求解失败3" << std::endl;
+    if (test_index < 2) {
+        std::cout << "second" << std::endl;
+        map<double, ImageFrame>::iterator frame_it_;
+        map<int, Vector3d>::iterator it_;
+        frame_it_ = all_image_frame.begin();
+        std::cout << std::fixed << std::setprecision(15);
+        for (int i = 0; frame_it_ != all_image_frame.end( ); frame_it_++) {
+            cv::Mat r, rvec, t, D, tmp_r;
+            std::cout << "i = " << i << std::endl;
+            std::cout << "frame_it->first = " << frame_it_->first << std::endl;
+            std::cout << "Headers[i].stamp.toSec() = " << Headers[i].stamp.toSec() << std::endl;
+            i++;
+        }
+    }
+#endif
+
+#if 0
+    // 测试all_image_frame与Headers的大小
+    std::cout << "all_image_frame.size = " << all_image_frame.size() << std::endl;
+    std::cout << "Headers[frame_count].stamp.toSec() = " << Headers[frame_count].stamp.toSec() << std::endl;
+#endif
 
     // Step 3 solve pnp for all frame
     // step2只是针对KF进行sfm，初始化需要all_image_frame中的所有元素，因此下面通过KF来求解其他的非KF的位姿
@@ -359,16 +475,35 @@ bool Estimator::initialStructure()
         // provide initial guess
         cv::Mat r, rvec, t, D, tmp_r;
         // 这一帧本身就是KF，因此可以直接得到位姿
+        // 对于正常的初始化，初始化的那些帧都会被认为是关键帧
         if((frame_it->first) == Headers[i].stamp.toSec())
         {
+#if 0
+            std::cout << "关键帧：" << i << std::endl;
+#endif
             frame_it->second.is_key_frame = true;
-            frame_it->second.R = Q[i].toRotationMatrix() * RIC[0].transpose();  // 得到Rwi
+            frame_it->second.R = Q[i].toRotationMatrix() * RIC[0].transpose();  // 得到Rwi，world对应着枢纽帧
             frame_it->second.T = T[i];  // 初始化不估计平移外参
             i++;
             continue;
         }
+#if 0
+        std::cout << "third" << std::endl;
+        std::cout << std::fixed << std::setprecision(15);
+        std::cout << "i = " << i << std::endl;
+        std::cout << "frame_it->first = " << frame_it->first << std::endl;
+        std::cout << "Headers[i].stamp.toSec() = " << Headers[i].stamp.toSec() << std::endl;
+#endif
+        /**
+         * notes:
+         *      1. 试想有这样一种场景：frame_it对应的时间戳总是大于Headers对应的时间戳，因此二者都会执行frame_it++和i++，因此二者的时间戳总是没有办法对齐，也就不会有关键帧了
+         *      2. 在测试中，如果我们margin了倒数第二帧，那么就会产生时间戳不对应的情况发生，但此时由于这个判断不通过，i就会滞后frame_it，后面二者就对齐了，因此后面的图像就被认为是关键帧了
+         */
         if((frame_it->first) > Headers[i].stamp.toSec())
         {
+#if 0
+            std::cout << "i递增了1" << std::endl;
+#endif
             i++;
         }
         // 最近的KF提供一个初始值，Twc -> Tcw
@@ -382,7 +517,7 @@ bool Estimator::initialStructure()
         frame_it->second.is_key_frame = false;
         vector<cv::Point3f> pts_3_vector;
         vector<cv::Point2f> pts_2_vector;
-        // 遍历这一帧对应的特征点
+        // 遍历这一帧对应的特征点，获得其对应的3维点（如果有的话），用于后面的pnp求解
         for (auto &id_pts : frame_it->second.points)
         {
             int feature_id = id_pts.first;
@@ -395,6 +530,7 @@ bool Estimator::initialStructure()
                     Vector3d world_pts = it->second;    // 地图点的世界坐标
                     cv::Point3f pts_3(world_pts(0), world_pts(1), world_pts(2));
                     pts_3_vector.push_back(pts_3);
+                    // 去畸变的归一化相机系坐标
                     Vector2d img_pts = i_p.second.head<2>();
                     cv::Point2f pts_2(img_pts(0), img_pts(1));
                     pts_2_vector.push_back(pts_2);
@@ -402,13 +538,13 @@ bool Estimator::initialStructure()
             }
         }
         cv::Mat K = (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, 1, 0, 0, 0, 1);     
-        if(pts_3_vector.size() < 6)
+        if(pts_3_vector.size() < 6)  // 匹配的数量少于6
         {
             cout << "pts_3_vector size " << pts_3_vector.size() << endl;
             ROS_DEBUG("Not enough points for solve pnp !");
             return false;
         }
-        // 依然是调用opencv求解pnp接口
+        // 依然是调用opencv求解pnp接口：使用优化的方式，并使用初始的外参
         if (! cv::solvePnP(pts_3_vector, pts_2_vector, K, D, rvec, t, 1))
         {
             ROS_DEBUG("solve pnp fail!");
@@ -452,16 +588,18 @@ bool Estimator::visualInitialAlign()
     }
 
     // change state
-    // 首先把对齐后KF的位姿附给滑窗中的值，Rwi twc
+    // 首先把对齐后KF的位姿附给滑窗中的值，Rwi twc，到目前位置，world对应着枢纽帧
     for (int i = 0; i <= frame_count; i++)
     {
         Matrix3d Ri = all_image_frame[Headers[i].stamp.toSec()].R;
         Vector3d Pi = all_image_frame[Headers[i].stamp.toSec()].T;
         Ps[i] = Pi;
         Rs[i] = Ri;
+        // 在initialStructure中已经将其设置为关键帧了
         all_image_frame[Headers[i].stamp.toSec()].is_key_frame = true;
     }
 
+    // 以下操作的目的是将所有观测数目在2以上的特征点的深度全部赋值为-1，后面会做多帧的三角化
     VectorXd dep = f_manager.getDepthVector();  // 根据有效特征点数初始化这个动态向量
     for (int i = 0; i < dep.size(); i++)
         dep[i] = -1;    // 深度预设都是-1
@@ -548,9 +686,9 @@ bool Estimator::relativePose(Matrix3d &relative_R, Vector3d &relative_T, int &l)
     for (int i = 0; i < WINDOW_SIZE; i++)
     {
         vector<pair<Vector3d, Vector3d>> corres;
-        corres = f_manager.getCorresponding(i, WINDOW_SIZE);
+        corres = f_manager.getCorresponding(i, WINDOW_SIZE);  // 最后一帧是固定的，选择的是开始的一帧
         // 要求共视的特征点足够多
-        if (corres.size() > 20)
+        if (corres.size() > 20)  // 这里的条件是希望足够接近，从而有足够的匹配点
         {
             double sum_parallax = 0;
             double average_parallax;
@@ -562,7 +700,7 @@ bool Estimator::relativePose(Matrix3d &relative_R, Vector3d &relative_T, int &l)
                 sum_parallax = sum_parallax + parallax;
 
             }
-            // 计算每个特征点的平均视差
+            // 计算每个特征点的平均视差：注意这个视差是去畸变的归一化相机系下，需要变换到图像坐标系下
             average_parallax = 1.0 * sum_parallax / int(corres.size());
             // 有足够的视差在通过本质矩阵恢复第i帧和最后一帧之间的 R t T_i_last
             if(average_parallax * 460 > 30 && m_estimator.solveRelativeRT(corres, relative_R, relative_T))
@@ -1185,6 +1323,14 @@ void Estimator::slideWindow()
 {
     TicToc t_margin;
     // 根据边缘化种类的不同，进行滑窗的方式也不同
+#if 0
+    std::cout << "fist" << std::endl;
+    std::cout << "marginalization_flag = " << marginalization_flag << std::endl;
+    std::cout << std::fixed << std::setprecision(15);
+    for (int i = 0; i < WINDOW_SIZE; i++) {
+        std::cout << "headers[i].t = " << Headers[i].stamp.toSec() << std::endl;
+    }
+#endif
     if (marginalization_flag == MARGIN_OLD)
     {
         double t_0 = Headers[0].stamp.toSec();
@@ -1193,7 +1339,7 @@ void Estimator::slideWindow()
         // 必须是填满了滑窗才可以
         if (frame_count == WINDOW_SIZE)
         {
-            // 一帧一帧交换过去
+            // 一帧一帧交换过去：注意这里仅仅只是更新了预积分相关的信息，all_image_frame的信息在后面更新
             for (int i = 0; i < WINDOW_SIZE; i++)
             {
                 Rs[i].swap(Rs[i + 1]);
@@ -1210,7 +1356,13 @@ void Estimator::slideWindow()
                 Bas[i].swap(Bas[i + 1]);
                 Bgs[i].swap(Bgs[i + 1]);
             }
+#if 0
+            std::cout << std::fixed << std::setprecision(15);
+            std::cout << "Ps[WINDOW_SIZE]" << Ps[WINDOW_SIZE] << ", Ps[WINDOW_SIZE - 1] = " << Ps[WINDOW_SIZE - 1] << std::endl;
+            std::cout << "Bas[WINDOW_SIZE] = " << Bas[WINDOW_SIZE] << ", Bas[WINDOW_SIZE - 1] = " << Bas[WINDOW_SIZE - 1] << std::endl;
+#endif
             // 最后一帧的状态量赋上当前值，最为初始值
+            // 注意上面是swap，而不是直接赋值覆盖，因此才有下面的操作，上面的for循环之后，类似Ps[WINDOW_SIZE]已经发生了变化
             Headers[WINDOW_SIZE] = Headers[WINDOW_SIZE - 1];
             Ps[WINDOW_SIZE] = Ps[WINDOW_SIZE - 1];
             Vs[WINDOW_SIZE] = Vs[WINDOW_SIZE - 1];
@@ -1219,22 +1371,40 @@ void Estimator::slideWindow()
             Bgs[WINDOW_SIZE] = Bgs[WINDOW_SIZE - 1];
             // 预积分量就得置零
             delete pre_integrations[WINDOW_SIZE];
+#if 0
+            std::cout << std::fixed << std::setprecision(15);
+            std::cout << "acc_0 = " << acc_0 << ", gyr_0 = " << gyr_0 << std::endl;
+#endif
             pre_integrations[WINDOW_SIZE] = new IntegrationBase{acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]};
             // buffer清空，等待新的数据来填
             dt_buf[WINDOW_SIZE].clear();
             linear_acceleration_buf[WINDOW_SIZE].clear();
             angular_velocity_buf[WINDOW_SIZE].clear();
             // 清空all_image_frame最老帧之前的状态
-            if (true || solver_flag == INITIAL)
+            if (true || solver_flag == INITIAL)  // 始终都会执行
             {
                 // 预积分量是堆上的空间，因此需要手动释放
                 map<double, ImageFrame>::iterator it_0;
                 it_0 = all_image_frame.find(t_0);
                 delete it_0->second.pre_integration;
                 it_0->second.pre_integration = nullptr;
- 
+#if 0
+                std::cout << "开始执行判断" << std::endl;
+                std::cout << "all_image_frame.size = " << all_image_frame.size() << std::endl;
+                for (map<double, ImageFrame>::iterator it = all_image_frame.begin(); it != all_image_frame.end(); ++it) {
+                    std::cout << "it = " << it->first << std::endl;
+                    std::cout << "it_0 = " << it_0->first << std::endl;
+                    if (it != it_0) {
+                        std::cout << "发生不相等了" << std::endl;
+                    }
+                }
+#endif
+                // 在初始化阶段，it_0对应的一般是all_image_frame的第一帧，因此这个for循环一般进不去就直接结束了
                 for (map<double, ImageFrame>::iterator it = all_image_frame.begin(); it != it_0; ++it)
                 {
+#if 0
+                    std::cout << "释放预积分" << std::endl;
+#endif
                     if (it->second.pre_integration)
                         delete it->second.pre_integration;
                     it->second.pre_integration = NULL;
@@ -1252,6 +1422,7 @@ void Estimator::slideWindow()
         if (frame_count == WINDOW_SIZE)
         {
             // 将最后两个预积分观测合并成一个
+            // 需要注意的是：此时frame_count已经等于window_size了，也就是已经不在窗口内了，是窗口右边的第一帧
             for (unsigned int i = 0; i < dt_buf[frame_count].size(); i++)
             {
                 double tmp_dt = dt_buf[frame_count][i];
@@ -1264,8 +1435,8 @@ void Estimator::slideWindow()
                 linear_acceleration_buf[frame_count - 1].push_back(tmp_linear_acceleration);
                 angular_velocity_buf[frame_count - 1].push_back(tmp_angular_velocity);
             }
-            // 简单的滑窗交换
-            Headers[frame_count - 1] = Headers[frame_count];
+            // 简单的滑窗交换：将变量与合并后的预积分相对应
+            Headers[frame_count - 1] = Headers[frame_count];  // 预积分已经合并了，因此其结束时刻也要更新，下面的变量也是一样
             Ps[frame_count - 1] = Ps[frame_count];
             Vs[frame_count - 1] = Vs[frame_count];
             Rs[frame_count - 1] = Rs[frame_count];
@@ -1273,6 +1444,12 @@ void Estimator::slideWindow()
             Bgs[frame_count - 1] = Bgs[frame_count];
             // reset最新预积分量
             delete pre_integrations[WINDOW_SIZE];
+#if 0
+            std::cout << std::fixed << std::setprecision(15);
+            std::cout << "acc_0 = " << acc_0 << ", gyr_0 = " << gyr_0 << std::endl;
+#endif
+            // 注意，这里的acc_0和gyr_0并不是当前预积分的第一个读数，而是已经更新了，是当前预积分的最后一个读数，是下一个预积分的第一个读数
+            // 但从初始化的逻辑看，这里不new也没关系，在图像处理函数中也会new出来
             pre_integrations[WINDOW_SIZE] = new IntegrationBase{acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]};
             // clear相关buffer
             dt_buf[WINDOW_SIZE].clear();
@@ -1282,6 +1459,14 @@ void Estimator::slideWindow()
             slideWindowNew();
         }
     }
+#if 0
+    std::cout << "second" << std::endl;
+    std::cout << "marginalization_flag = " << marginalization_flag << std::endl;
+    std::cout << std::fixed << std::setprecision(15);
+    for (int i = 0; i < WINDOW_SIZE; i++) {
+        std::cout << "headers[i].t = " << Headers[i].stamp.toSec() << std::endl;
+    }
+#endif
 }
 
 // real marginalization is removed in solve_ceres()
