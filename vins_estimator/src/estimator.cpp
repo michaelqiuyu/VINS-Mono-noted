@@ -310,6 +310,7 @@ bool Estimator::initialStructure()
          *      1. 预积分的V只需要用到IMU的测量值就可以计算
          *      2. 如果要使用比力，那么a_w = Rwb * (f_b - ba - na) + g，此时需要知道Rwb，也就是需要知道IMU的位姿，这在初始化里面是未知的
          *      3. 因此，这里使用delta_v来计算三个轴加速度方差的总和
+         *      4. beita / delta_t = R * (a - gw)，由于gw是固定值，因此beita / delta_t的波动也就代表了a的波动
          *
          * 做这个操作的原因：
          *      1. IMU预积分是基于牛顿第二定律的，如果body不动或者匀速运动，那么aw=0，那么就没有办法积分出速度和加速度了，IMU预积分也无法计算了
@@ -328,6 +329,15 @@ bool Estimator::initialStructure()
             Vector3d tmp_g = frame_it->second.pre_integration->delta_v / dt;
             // 累加每一帧带重力加速度的deltav：预积分中的delta_v
             sum_g += tmp_g;
+            /**
+             * 1. 使用预积分的位移除以时间来做速度的判断是不对的，这个可以从预积分的位移公式看出，因为预积分的位姿并不代表两帧之间的位移
+             *      alpha / delta_t = R * (v - v_bk + 0.5 * g * delta_t)；由于delta_t和v_bk都是变量，因此alpha / delta_t的波动不能代表v的波动
+             * 2. 直接使用预积分的速度是否接近某个常数来判断也是不行的，因为beita = R * (delta_v - g * delta_t)，由于delta_t是变量，因此beita为常数也不能说明delta_v等于0
+             * 3. 视觉初始化之后，使用枢纽帧下的平移参数来计算也是不行的，因为此时还没有尺度（尺度还是依赖预积分得到的，互为条件了），阈值无法给出
+             *
+             * 在没有其他传感器的情况下，真实尺度的速度是拿不到的，因此没办法做速度的方差校验；这里适应加速度来判断，相当于将条件变严格了；
+             * 如果加速度的条件都满足了，速度的条件一定能满足
+             */
 #if 0
             Vector3d tmp_v = frame_it->second.pre_integration->delta_p / dt;
             std::cout << "frame_it->second.pre_integration->delta_p = " << frame_it->second.pre_integration->delta_p << std::endl;
@@ -347,10 +357,7 @@ bool Estimator::initialStructure()
         {
             double dt = frame_it->second.pre_integration->sum_dt;
             Vector3d tmp_g = frame_it->second.pre_integration->delta_v / dt;
-            // 求方差
-            /**
-             * notes: 三个轴上的方差一起计算
-             */
+            // 求方差: 三个轴上的方差一起计算
             var += (tmp_g - aver_g).transpose() * (tmp_g - aver_g);
             //cout << "frame g " << tmp_g.transpose() << endl;
 
@@ -698,18 +705,19 @@ bool Estimator::visualInitialAlign()
     std::cout << "g = " << g << std::endl;
 #endif
     //Matrix3d rot_diff = R0 * Rs[0].transpose();
+    // 在这里构建的世界系的原点在b0的原点，因此只有旋转而没有平移
     Matrix3d rot_diff = R0;
     for (int i = 0; i <= frame_count; i++)
     {
         // 在此之前，Ps、Rs和Vs均是枢纽帧坐标系下的物理量，将其变换到上面计算得到的世界系下面
-        Ps[i] = rot_diff * Ps[i];
+        Ps[i] = rot_diff * Ps[i];  // 这里仅仅只是旋转了向量，而没有平移，说明新的世界系的原点与b0重合
         Rs[i] = rot_diff * Rs[i];   // 全部对齐到重力下，同时yaw角对齐到第一帧
         Vs[i] = rot_diff * Vs[i];
     }
-    // g变成了标准重力，Rs[0]的位姿并不是单位帧，一定要牢记
+    // g变成了标准重力，Rs[0]的位姿并不是单位帧，一定要牢记，担其yaw角为0
     ROS_DEBUG_STREAM("g0     " << g.transpose());
     ROS_DEBUG_STREAM("my R0  " << Utility::R2ypr(Rs[0]).transpose());
-#if 1
+#if 0
     // yaw角为0
     std::cout << "Utility::R2ypr(Rs[0]).transpose() = " << Utility::R2ypr(Rs[0]).transpose() << std::endl;
 #endif
@@ -778,7 +786,8 @@ void Estimator::solveOdometry()
     {
         TicToc t_tri;
         // 先把应该三角化但是没有三角化的特征点三角化
-        // xc's todo: 为什么还有应该初始化而没有初始化的特征点
+        // xc's todo: 为什么还有应该初始化而没有初始化的特征点：初始化结束后执行这个函数并没有需要三角化的地图点了
+        // 初始化结束后进入这个函数会有需要三角化点地图点
         f_manager.triangulate(Ps, tic, ric);
         ROS_DEBUG("triangulation costs %f", t_tri.toc());
         optimization();
