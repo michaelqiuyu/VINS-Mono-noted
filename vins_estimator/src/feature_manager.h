@@ -51,7 +51,7 @@ class FeaturePerId
     int used_num;
     bool is_outlier;
     bool is_margin;
-    double estimated_depth;
+    double estimated_depth;  // start_frame下的深度值，而不是世界系下的深度
     int solve_flag; // 0 haven't solve yet; 1 solve succ; 2 solve fail;
 
     Vector3d gt_p;

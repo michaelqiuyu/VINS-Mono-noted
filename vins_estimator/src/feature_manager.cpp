@@ -194,6 +194,7 @@ void FeatureManager::setDepth(const VectorXd &x)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
         // xc's todo: 经过测试，有大量观测大于等于2，但是起始帧大于等于window_size - 2的，这些特征点不处理吗？
+        //  在初始化环节，地图点存储在sfm_f中，并没有赋值给feature，因此初始化的时候，所有的地图点的深度都是-1
         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
 
@@ -235,6 +236,7 @@ void FeatureManager::clearDepth(const VectorXd &x)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
         // xc's todo: 经过测试，有大量观测大于等于2，但是起始帧大于等于window_size - 2的，这些特征点不处理吗？
+        //  在初始化环节，地图点存储在sfm_f中，并没有赋值给feature，因此初始化的时候，所有的地图点的深度都是-1
         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
         it_per_id.estimated_depth = 1.0 / x(++feature_index);
@@ -256,11 +258,14 @@ VectorXd FeatureManager::getDepthVector()
 #if 0
 //        std::cout << "it_per_id.used_num = " << it_per_id.used_num << std::endl;
 //        std::cout << "it_per_id.start_frame = " << it_per_id.start_frame << std::endl;
-        if (it_per_id.used_num >= 2 && it_per_id.start_frame >= WINDOW_SIZE - 2)
+        if (it_per_id.used_num >= 2 && it_per_id.start_frame >= WINDOW_SIZE - 2) {
             std::cout << "这个正常的地图点也不处理吗" << std::endl;
+            std::cout << "这个特征点的深度为：" << it_per_id.estimated_depth << std::endl;
+        }
 
 #endif
         // xc's todo: 经过测试，有大量观测大于等于2，但是起始帧大于等于window_size - 2的，这些特征点不处理吗？
+        //  在初始化环节，地图点存储在sfm_f中，并没有赋值给feature，因此初始化的时候，所有的地图点的深度都是-1
         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
 #if 1
@@ -281,10 +286,15 @@ VectorXd FeatureManager::getDepthVector()
  */
 void FeatureManager::triangulate(Vector3d Ps[], Vector3d tic[], Matrix3d ric[])
 {
+    /**
+     * 多帧三角化，利用所有的观测来构建约束，得到最小二乘解
+     * 注意这里的计算是在start_frame下进行的，得到的深度也是start_frame坐标系下的深度
+     */
     // 遍历每一个特征点
     for (auto &it_per_id : feature)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
+        // 如果是最近才看到的特征点也不会处理，尽管其观测大于2
         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
 
@@ -293,11 +303,18 @@ void FeatureManager::triangulate(Vector3d Ps[], Vector3d tic[], Matrix3d ric[])
         int imu_i = it_per_id.start_frame, imu_j = imu_i - 1;
 
         ROS_ASSERT(NUM_OF_CAM == 1);
+        // 被一帧看到就可以构建2个方程
         Eigen::MatrixXd svd_A(2 * it_per_id.feature_per_frame.size(), 4);
         int svd_idx = 0;
 
         Eigen::Matrix<double, 3, 4> P0;
         // Twi -> Twc,第一个观察到这个特征点的KF的位姿
+        /**
+         * 在初始化里面，world是枢纽帧，tic[0]是零向量，因为这个时候的Ps并没有表示IMU的信息，还是表示枢纽帧下的相机平移
+         * 因此t0 = Ps[imu_i] + Rs[imu_i] * tic[0] = Ps[imu_i]实际上就是枢纽帧（也就是当前的世界系）下的相机平移，正好跟R0对应上
+         *
+         * 这里的代码写的非常不好，可读性太差了，很容易让人感到疑惑，代码最好还是解耦一些比较好
+         */
         Eigen::Vector3d t0 = Ps[imu_i] + Rs[imu_i] * tic[0];
         Eigen::Matrix3d R0 = Rs[imu_i] * ric[0];
         P0.leftCols<3>() = Eigen::Matrix3d::Identity();
@@ -316,8 +333,11 @@ void FeatureManager::triangulate(Vector3d Ps[], Vector3d tic[], Matrix3d ric[])
             // T_c0_cj -> T_cj_c0相当于把c0当作世界系
             P.leftCols<3>() = R.transpose();
             P.rightCols<1>() = -R.transpose() * t;
+            // 这一步实际上没有必要
             Eigen::Vector3d f = it_per_frame.point.normalized();
-            // 构建超定方程的其中两个方程
+            // 构建超定方程的其中两个方程：每一帧提供两个方程
+            // 使用的形式是：(u * p3.t - p1.t) * p = 0, (v * p3.t - p2.t) * p = 0;
+            // 注意这里使用的是归一化相机系坐标，不是图像坐标，但是推导过程是一样的
             svd_A.row(svd_idx++) = f[0] * P.row(2) - f[2] * P.row(0);
             svd_A.row(svd_idx++) = f[1] * P.row(2) - f[2] * P.row(1);
 
@@ -336,7 +356,7 @@ void FeatureManager::triangulate(Vector3d Ps[], Vector3d tic[], Matrix3d ric[])
 
         if (it_per_id.estimated_depth < 0.1)
         {
-            it_per_id.estimated_depth = INIT_DEPTH; // 具体太近就设置成默认值
+            it_per_id.estimated_depth = INIT_DEPTH; // 距离太近就设置成默认值
         }
 
     }

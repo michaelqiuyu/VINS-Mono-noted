@@ -185,7 +185,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     // 有一些帧会因为不是KF，被MARGIN_SECOND_NEW，但是及时较新的帧被margin，他也会保留在这个容器中，因为初始化要求使用所有的帧，而非只要KF
     ImageFrame imageframe(image, header.stamp.toSec());
     // 对于图像的第一帧，其tmp_pre_intergration为nullptr，也对应了图像第一帧之前的IMU不做预积分，不使用
-    imageframe.pre_integration = tmp_pre_integration;
+    imageframe.pre_integration = tmp_pre_integration;  // 注意这里使用的是tmp_pre_intergration，而不是pre_integrations
     // 这里就是简单的把图像和预积分绑定在一起，这里预积分就是两帧之间的，滑窗中实际上是两个KF之间的
     // 实际上是准备用来初始化的相关数据
     all_image_frame.insert(make_pair(header.stamp.toSec(), imageframe));
@@ -423,7 +423,7 @@ bool Estimator::initialStructure()
         marginalization_flag = MARGIN_OLD;
         return false;
     }
-#if 1
+#if 0
     std::cout << "求解失败2" << std::endl;
     if (test_index < 1) {
         map<double, ImageFrame>::iterator frame_it_;
@@ -482,8 +482,9 @@ bool Estimator::initialStructure()
             std::cout << "关键帧：" << i << std::endl;
 #endif
             frame_it->second.is_key_frame = true;
+            // notes: 这里的R和T表示的对象是不同的，因此后面的某些操作是比较具有迷惑性的，但只要知道这一点就能很清晰的理解
             frame_it->second.R = Q[i].toRotationMatrix() * RIC[0].transpose();  // 得到Rwi，world对应着枢纽帧
-            frame_it->second.T = T[i];  // 初始化不估计平移外参
+            frame_it->second.T = T[i];  // 初始化不估计平移外参，实际上表示的是枢纽帧下的相机的平移，与R表示的IMU信息是不同的
             i++;
             continue;
         }
@@ -588,41 +589,65 @@ bool Estimator::visualInitialAlign()
     }
 
     // change state
-    // 首先把对齐后KF的位姿附给滑窗中的值，Rwi twc，到目前位置，world对应着枢纽帧
+    // 首先把对齐后KF的位姿附给滑窗中的值，Rwi twi，到目前位置，world对应着枢纽帧
     for (int i = 0; i <= frame_count; i++)
     {
-        Matrix3d Ri = all_image_frame[Headers[i].stamp.toSec()].R;
-        Vector3d Pi = all_image_frame[Headers[i].stamp.toSec()].T;
+        Matrix3d Ri = all_image_frame[Headers[i].stamp.toSec()].R;  // Rc0_bi，表示枢纽帧下的IMU位姿
+        Vector3d Pi = all_image_frame[Headers[i].stamp.toSec()].T;  // 这里的T还是枢纽帧下面的相机平移，跟R是在枢纽帧下的IMU旋转是不同的
         Ps[i] = Pi;
         Rs[i] = Ri;
         // 在initialStructure中已经将其设置为关键帧了
         all_image_frame[Headers[i].stamp.toSec()].is_key_frame = true;
     }
 
+#if 0
+    for (auto &it_per_id : f_manager.feature) {
+        it_per_id.used_num = it_per_id.feature_per_frame.size();
+//        std::cout << "it_per_id.used_num = " << it_per_id.used_num << std::endl;
+//        std::cout << "it_per_id.start_frame = " << it_per_id.start_frame << ", window_size - 2 = " << WINDOW_SIZE -2 << std::endl;
+        if (std::abs(it_per_id.estimated_depth + 1) > 1e-6)
+            std::cout << "这个特征点的深度为：" << it_per_id.estimated_depth << std::endl;
+        std::cout << std::endl;
+    }
+#endif
+
     // 以下操作的目的是将所有观测数目在2以上的特征点的深度全部赋值为-1，后面会做多帧的三角化
+    // 经测试，此时特征点管理器中的特征点的深度值都是-1，还没有被赋值
     VectorXd dep = f_manager.getDepthVector();  // 根据有效特征点数初始化这个动态向量
     for (int i = 0; i < dep.size(); i++)
         dep[i] = -1;    // 深度预设都是-1
     f_manager.clearDepth(dep);  // 特征管理器把所有的特征点逆深度也设置为-1
 
-    //triangulat on cam pose , no tic
+    //triangulate on cam pose , no tic
     Vector3d TIC_TMP[NUM_OF_CAM];
     for(int i = 0; i < NUM_OF_CAM; i++)
         TIC_TMP[i].setZero();
     ric[0] = RIC[0];
     f_manager.setRic(ric);
     // 多约束三角化所有的特征点，注意，仍带是尺度模糊的
+#if 0
+    std::cout << "tic[0] = " << TIC_TMP[0] << std::endl;
+#endif
+    // xc's todo: 在这里传入的平移为零向量，三角化的结果准确吗?：这里的Ps实际上还是枢纽帧下的相机平移，因此实际上不应该传入平移，也可以说应该传入零向量
     f_manager.triangulate(Ps, &(TIC_TMP[0]), &(RIC[0]));
 
     double s = (x.tail<1>())(0);
     // 将滑窗中的预积分重新计算
+    // 需要注意的是，在陀螺仪零偏初始值计算中，对all_image_frame中的预积分（tmp_pre_integration）重新计算了，这里是对pre_integrations中的预积分重新计算
     for (int i = 0; i <= WINDOW_SIZE; i++)
     {
         pre_integrations[i]->repropagate(Vector3d::Zero(), Bgs[i]);
     }
     // 下面开始把所有的状态对齐到第0帧的imu坐标系
     for (int i = frame_count; i >= 0; i--)
-        // twi - tw0 = toi,就是把所有的平移对齐到滑窗中的第0帧
+        /**
+         * s * Pc0_ci - s * Pc0_bi = Rc0_b0 * Pb_c，见论文公式6，c0代表枢纽帧的相机系
+         *
+         * s * Ps[i] - Rs[i] * TIC[0] = s * Pc0_bi
+         * s * Ps[0] - Rs[0] * TIC[0] = s * Pc0_b0
+         *
+         * Ps[i]代表枢纽帧下b0到bi的向量，并且尺度已经恢复了
+         */
         Ps[i] = s * Ps[i] - Rs[i] * TIC[0] - (s * Ps[0] - Rs[0] * TIC[0]);
     int kv = -1;
     map<double, ImageFrame>::iterator frame_i;
@@ -632,7 +657,10 @@ bool Estimator::visualInitialAlign()
         if(frame_i->second.is_key_frame)
         {
             kv++;
-            // 当时求得速度是imu系，现在转到world系
+            // 当时求得速度是第k帧IMU坐标系下面的速度，现在转到world系
+            // second.R目前为止表示的是Twi，world是枢纽帧的相机系
+            // Rw_bk * Vbk_bk = Rw_bk，注意这里的速度仍然是枢纽帧下面的，还没有转换到第0帧IMU坐标系下
+            // xc's todo: Vs保存的是哪个坐标系下面的速度，他跟上面的Ps的坐标系是不同的？：后面会进一步更新
             Vs[kv] = frame_i->second.R * x.segment<3>(kv * 3);
         }
     }
@@ -642,23 +670,49 @@ bool Estimator::visualInitialAlign()
         it_per_id.used_num = it_per_id.feature_per_frame.size();
         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
+        // s是枢纽帧坐标系下的尺度因子，也就是相机系到真实世界的尺度变换；上面三角化得到的深度也是基于start_frame计算的，二者必须对应
+        // 枢纽帧坐标系是相机系，实际上对于任意的相机系，其尺度因子与枢纽帧的尺度因子是一样的
         it_per_id.estimated_depth *= s;
     }
     // 所有的P V Q全部对齐到第0帧的，同时和对齐到重力方向
-    Matrix3d R0 = Utility::g2R(g);  // g是枢纽帧下的重力方向，得到R_w_j
-    double yaw = Utility::R2ypr(R0 * Rs[0]).x();    // Rs[0]实际上是R_j_0
-    R0 = Utility::ypr2R(Eigen::Vector3d{-yaw, 0, 0}) * R0;  // 第一帧yaw赋0
+    Matrix3d R0 = Utility::g2R(g);  // g是枢纽帧下的重力方向，得到枢纽帧到某个坐标系的变换（实际上是一个Z轴与重力重合的坐标系，并且补偿了yaw）
+    // Rw_c0 * Rc0_b0 = Rw_b0，也就是第0帧IMU坐标系到世界系，这个世界系也就是某个Z轴与重力重合的坐标系（并且补偿yaw角）
+    double yaw = Utility::R2ypr(R0 * Rs[0]).x();
+#if 0
+    std::cout << "Utility::R2ypr(R0 * Rs[0]).x() = " << Utility::R2ypr(R0 * Rs[0]).x() << std::endl;
+    std::cout << "Utility::R2ypr(R0 * Rs[0]).y() = " << Utility::R2ypr(R0 * Rs[0]).y() << std::endl;
+    std::cout << "Utility::R2ypr(R0 * Rs[0]).z() = " << Utility::R2ypr(R0 * Rs[0]).z() << std::endl;
+    std::cout << "R0 * g = " << R0 * g << std::endl;
+#endif
+    /**
+     * notes:
+     *      1. 首先，bi并不是重力与Z轴重合的坐标系，应该说每一个imu都对应着一个重力与Z轴重合的坐标系
+     *      2. 本身，从world→b0需要经过欧拉角-yaw, -pitch, -roll
+     *      3. Eigen::Vector3d{-yaw, 0, 0} * R0表示将枢纽帧变换到world，然后在经过欧拉角-yaw得到的坐标系
+     *      4. world是一个重力与Z轴重合的坐标系，仅仅变动yaw角度，并不是以b0为世界系，这里的新的世界系遵循上述操作产生的，其Z轴与重力方向重合
+     */
+    // xc's todo: 为什么要补偿yaw角？只要是一个重力与Z轴重合的坐标系不就可以了吗
+    R0 = Utility::ypr2R(Eigen::Vector3d{-yaw, 0, 0}) * R0;  // R0表示RnewWorld_c0
     g = R0 * g;
+#if 0
+    std::cout << "g = " << g << std::endl;
+#endif
     //Matrix3d rot_diff = R0 * Rs[0].transpose();
     Matrix3d rot_diff = R0;
     for (int i = 0; i <= frame_count; i++)
     {
+        // 在此之前，Ps、Rs和Vs均是枢纽帧坐标系下的物理量，将其变换到上面计算得到的世界系下面
         Ps[i] = rot_diff * Ps[i];
         Rs[i] = rot_diff * Rs[i];   // 全部对齐到重力下，同时yaw角对齐到第一帧
         Vs[i] = rot_diff * Vs[i];
     }
+    // g变成了标准重力，Rs[0]的位姿并不是单位帧，一定要牢记
     ROS_DEBUG_STREAM("g0     " << g.transpose());
-    ROS_DEBUG_STREAM("my R0  " << Utility::R2ypr(Rs[0]).transpose()); 
+    ROS_DEBUG_STREAM("my R0  " << Utility::R2ypr(Rs[0]).transpose());
+#if 1
+    // yaw角为0
+    std::cout << "Utility::R2ypr(Rs[0]).transpose() = " << Utility::R2ypr(Rs[0]).transpose() << std::endl;
+#endif
 
     return true;
 }
