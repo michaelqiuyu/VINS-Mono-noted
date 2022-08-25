@@ -168,8 +168,10 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         marginalization_flag = MARGIN_OLD;
     else
         // 否则移除上一帧
-        // xc's todo: 这是什么意思？
         marginalization_flag = MARGIN_SECOND_NEW;
+#if 1
+    std::cout << "marginalization_flag = " << marginalization_flag << std::endl;
+#endif
 
     ROS_DEBUG("this frame is--------------------%s", marginalization_flag ? "reject" : "accept");
     ROS_DEBUG("%s", marginalization_flag ? "Non-keyframe" : "Keyframe");
@@ -798,7 +800,7 @@ void Estimator::solveOdometry()
  * @brief 由于ceres的参数块都是double数组，因此这里把参数块从eigen的表示转成double数组
  * 
  */
-void Estimator::vector2double()
+void Estimator::vector2double()  // 赋初值
 {
     // KF的位姿
     for (int i = 0; i <= WINDOW_SIZE; i++)

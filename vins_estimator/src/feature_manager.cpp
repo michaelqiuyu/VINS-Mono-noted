@@ -56,7 +56,7 @@ int FeatureManager::getFeatureCount()
  * @return false 
  */
 // 仅仅由Estimator::processImage调用
-// xc's todo: 检查的是当前帧还是当前帧的上一帧？
+// xc's todo: 检查的是当前帧还是当前帧的上一帧？：检查的是当前帧跟踪的好不好，如果不好，返回true，将其作为独立的一帧；如果好的话，返回false，将其与倒数第二帧合并
 bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, double td)
 {
     ROS_DEBUG("input feature: %d", (int)image.size());
@@ -88,11 +88,14 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
         else if (it->feature_id == feature_id)
         {
             // xc's todo: 并没有记录帧号，后面是如何知道这个特征点信息是在那一帧下的？：
-            //  从start_frame开始递增即可，这里跟ORB-SLAM3的特征点法不同，一旦某个特征点在某一帧不可见，那么在后面的帧都不可见，可见的帧一定是连续的
+            // 从start_frame开始递增即可，这里跟ORB-SLAM3的特征点法不同，一旦某个特征点在某一帧不可见，那么在后面的帧都不可见，可见的帧一定是连续的
             it->feature_per_frame.push_back(f_per_fra);
             last_track_num++;   // 追踪到上一帧的特征点数目
         }
     }
+#if 0
+    std::cout << "last_track_num = " << last_track_num << std::endl;
+#endif
     // 前两帧都设置为KF，追踪过少也认为是KF
     if (frame_count < 2 || last_track_num < 20)
         return true;
@@ -131,6 +134,7 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
         std::cout << "parallax_sum / parallax_num * FOCAL_LENGTH = " << parallax_sum / parallax_num * FOCAL_LENGTH << std::endl;
         std::cout << "parallax_sum / parallax_num = " << parallax_sum / parallax_num << std::endl;
 #endif
+        // 经过测试，这里的判断大部分时候都是true
         return parallax_sum / parallax_num >= MIN_PARALLAX;  // MIN_PARALLAX已经使用虚拟焦距处理过了
     }
 }

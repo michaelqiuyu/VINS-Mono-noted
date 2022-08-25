@@ -350,7 +350,11 @@
 					3.6.3 如果result为true，那么
 						1. 将solver_flay设置为NON_LINEAR
 						2. solveOdometry：
-							2.1 
+							2.1 如果窗口帧数不够，直接结束，否则
+							2.2 如果solver_flag等于non_linear，那么：
+								2.2.1 对特征点管理器中的特征点执行多帧三角化求解深度
+								2.2.2 执行optimization：
+									1. 
 
 						3. slideWindow
 							3.1 如果marginalization_flag为margin_old：
@@ -430,7 +434,9 @@
 estimator中的g是在哪里赋值的？
 
 
-
+git fetch --all 
+git reset --hard origin/master
+git pull
 
 
 
