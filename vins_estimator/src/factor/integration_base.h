@@ -218,6 +218,7 @@ class IntegrationBase
 
         // 视觉计算结果 - IMU计算结果
         residuals.block<3, 1>(O_P, 0) = Qi.inverse() * (0.5 * G * sum_dt * sum_dt + Pj - Pi - Vi * sum_dt) - corrected_delta_p;
+        // (corrected_delta_q.inverse() * (Qi.inverse() * Qj)).vec()对应着0.5 * theta
         residuals.block<3, 1>(O_R, 0) = 2 * (corrected_delta_q.inverse() * (Qi.inverse() * Qj)).vec();
         residuals.block<3, 1>(O_V, 0) = Qi.inverse() * (G * sum_dt + Vj - Vi) - corrected_delta_v;
         // 理论上，连续两帧之间的零偏不能偏差太大

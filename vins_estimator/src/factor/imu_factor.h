@@ -72,7 +72,7 @@ class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>
         residual = pre_integration->evaluate(Pi, Qi, Vi, Bai, Bgi,
                                             Pj, Qj, Vj, Baj, Bgj);
         // 因为ceres没有g2o设置信息矩阵的接口，因此置信度直接乘在残差上，这里通过LLT分解，相当于将信息矩阵开根号
-        // 执行LU分解中的乔累斯基分解，并获取LT矩阵（matrixL为获取L矩阵）
+        // 执行LU分解中的乔累斯基分解（LLT分解），并获取LT矩阵（matrixL为获取L矩阵）
         Eigen::Matrix<double, 15, 15> sqrt_info = Eigen::LLT<Eigen::Matrix<double, 15, 15>>(pre_integration->covariance.inverse()).matrixL().transpose();
         //sqrt_info.setIdentity();
         // 这就是带有信息矩阵的残差
@@ -93,12 +93,12 @@ class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>
             Eigen::Matrix3d dv_dba = pre_integration->jacobian.template block<3, 3>(O_V, O_BA);
             Eigen::Matrix3d dv_dbg = pre_integration->jacobian.template block<3, 3>(O_V, O_BG);
 
-            // 对雅克比矩阵中最大值和最小值的检验
+            // 对雅克比矩阵中最大值和最小值的检验：数值过大或者过小都不好
             if (pre_integration->jacobian.maxCoeff() > 1e8 || pre_integration->jacobian.minCoeff() < -1e8)
             {
                 ROS_WARN("numerical unstable in preintegration");
                 //std::cout << pre_integration->jacobian << std::endl;
-///                ROS_BREAK();
+                // ROS_BREAK();
             }
 
             // e对四个参数求导
