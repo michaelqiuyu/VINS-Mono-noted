@@ -49,8 +49,10 @@ bool PoseLocalParameterization::ComputeJacobian(const double *x, double *jacobia
      * jacobian存在的意义是对于过参数化的优化变量进行调整，得到没有过参数化的表达，比如在这个地方的位姿是7个维度(global_size)，实际上有效的维度是6个(local_size)
      * 位姿的前三个维度是平移，后4个维度是旋转，其中旋转的前三维是四元数的虚部，最后一维是四元数的实部
      * global_jacobian是15 * 7，jabocian是7 * 6，需要注意的是，这里并没有遵循一般的global_jacobian = e对q求导，jacobian = q对正切空间维度的变量(实际旋转的维度，在这里就是角度的一半，四元数的double cover效应)
+     * 如果我们按照上面的方式进行求导，jacobian的形式应该是q.L * (0.5 * I, 0).t，注意是0.5 * I
      *
      * 此处的特殊性在于，直接使用e对正切空间维度的优化变量(角度)进行求解，但是为了使得global_jacobian的维度是15 * 7，因此global_jacobian的最后一列是0，且jacobian的最后一行是0，jacobian的前6行是一个单位阵
+     * jacobian实际上是在求解(theta, 0).t对theta的jacobian
      */
     Eigen::Map<Eigen::Matrix<double, 7, 6, Eigen::RowMajor>> j(jacobian);
     j.topRows<6>().setIdentity();

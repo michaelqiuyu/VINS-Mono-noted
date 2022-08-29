@@ -16,6 +16,6 @@ class ProjectionFactor : public ceres::SizedCostFunction<2, 7, 7, 7, 1>
 
     Eigen::Vector3d pts_i, pts_j;
     Eigen::Matrix<double, 2, 3> tangent_base;
-    static Eigen::Matrix2d sqrt_info;
+    static Eigen::Matrix2d sqrt_info;  // sqrt_info = FOCAL_LENGTH / 1.5 * Matrix2d::Identity()
     static double sum_t;
 };

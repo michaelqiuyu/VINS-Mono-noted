@@ -169,7 +169,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     else
         // 否则移除上一帧
         marginalization_flag = MARGIN_SECOND_NEW;
-#if 1
+#if 0
     std::cout << "marginalization_flag = " << marginalization_flag << std::endl;
 #endif
 
@@ -421,6 +421,7 @@ bool Estimator::initialStructure()
 #endif
     GlobalSFM sfm;
     // 进行sfm的求解：需要注意的是，relative_R和relative_T仅仅通过E得到，并没有经过优化环节，后续应该会有一个统一的GBA
+    // 这里的sfm求解的是位姿，尽管内部也求解了地图点（sfm_f），但是后面没有使用，而是利用位姿重新三角化了
     if(!sfm.construct(frame_count + 1, Q, T, l,
               relative_R, relative_T,
               sfm_f, sfm_tracked_points))
@@ -638,9 +639,14 @@ bool Estimator::visualInitialAlign()
     std::cout << "tic[0] = " << TIC_TMP[0] << std::endl;
 #endif
     // xc's todo: 在这里传入的平移为零向量，三角化的结果准确吗?：这里的Ps实际上还是枢纽帧下的相机平移，因此实际上不应该传入平移，也可以说应该传入零向量
+    // 在单目sfm中确实已经两帧三角化点了，但是并没有赋值给Ps
     f_manager.triangulate(Ps, &(TIC_TMP[0]), &(RIC[0]));
 
     double s = (x.tail<1>())(0);
+#if 1
+    std::cout << "***************************尺度s = " << s << std::endl;
+#endif
+
     // 将滑窗中的预积分重新计算
     // 需要注意的是，在陀螺仪零偏初始值计算中，对all_image_frame中的预积分（tmp_pre_integration）重新计算了，这里是对pre_integrations中的预积分重新计算
     for (int i = 0; i <= WINDOW_SIZE; i++)
@@ -802,6 +808,9 @@ void Estimator::solveOdometry()
  */
 void Estimator::vector2double()  // 赋初值
 {
+    /**
+     * 同一种类型的状态量放在一个二维double中，每一个二维double的元素都是一个待优化的状态量
+     */
     // KF的位姿
     for (int i = 0; i <= WINDOW_SIZE; i++)
     {
@@ -838,7 +847,20 @@ void Estimator::vector2double()  // 赋初值
         para_Ex_Pose[i][5] = q.z();
         para_Ex_Pose[i][6] = q.w();
     }
-    // 特征点逆深度
+    /**
+     * 优化的是特征点的start_frame下的逆深度，这样做的理由是：
+     *      1. 从理论上，三维点投影到相机应该是完全与像素重合，也就是没有重投影误差，但实际上是不可能的
+     *      2. 这里认为在start_frame下是没有重投影误差的，也就是在地图点一定在初次观测到的start_frame的射线上，这在理论上也是合理的，这个特征点在start_frame上通过特征提取获得的，不是跟踪得到的
+     *      3. 后面对这个特征点的观测是通过光流跟踪得到的，准确度就下降了，这个意思就是说，光流也是有误差的，地图点投影到这些帧上就不一定与光流跟踪的像素点重合了
+     *      4. 所以优化start_frame下的逆深度是合理的，而且这种优化方式限制的地图点的运动范围，使得优化的地图点不会大幅偏离真值
+     *
+     * 这样做的好处是：
+     *      1. 从优化的变量是三维变成了一维，有利于提高实时性
+     *      2. 优化的是逆深度，对于非常远的点也会有比较好的鲁棒性，不至于出现数值非常大导致的数值精度问题；而一般不会有距离相机非常近的点
+     *
+     * 拓展：
+     *      1. 这种思路同样可以用于ORB-SLAM3等特征点法，因为在特征点匹配过程中也会存在误匹配，使用这种方式仅仅优化逆深度也能够根据重投影误差删除错误的匹配
+     */
     VectorXd dep = f_manager.getDepthVector();
     for (int i = 0; i < f_manager.getFeatureCount(); i++)
         para_Feature[i][0] = dep(i);
@@ -1001,6 +1023,13 @@ bool Estimator::failureDetection()
  */
 void Estimator::optimization()
 {
+    /**
+     * 优化函数包括的残差类型有：
+     *      1. 视觉重投影误差（分为优化时间同步和不优化时间同步）
+     *      2. 视觉与IMU预积分构建的残差
+     *      3. 边缘化获取的约束
+     *      4. 回环检测的约束
+     */
     // 借助ceres进行非线性优化
     ceres::Problem problem;
     ceres::LossFunction *loss_function;
@@ -1082,11 +1111,16 @@ void Estimator::optimization()
             {
                 continue;
             }
+#if 1
+            std::cout << "it_per_id.feature_per_frame[0].cur_td = " << it_per_id.feature_per_frame[0].cur_td << std::endl;
+            std::cout << "it_per_frame.cur_td = " << it_per_frame.cur_td << std::endl;
+#endif
             // 取出另一帧的归一化相机坐标
             Vector3d pts_j = it_per_frame.point;
             // 带有时间延时的是另一种形式
             if (ESTIMATE_TD)
             {
+                    // 这里的td都是从配置文件中读取的，实际上都是一个td
                     ProjectionTdFactor *f_td = new ProjectionTdFactor(pts_i, pts_j, it_per_id.feature_per_frame[0].velocity, it_per_frame.velocity,
                                                                      it_per_id.feature_per_frame[0].cur_td, it_per_frame.cur_td,
                                                                      it_per_id.feature_per_frame[0].uv.y(), it_per_frame.uv.y());

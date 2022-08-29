@@ -152,7 +152,7 @@ class IntegrationBase
             //step_V = V;
             /**
              * notes:
-             *      1. F矩阵用于递推求解预计分量关于零偏的导数
+             *      1. F矩阵用于递推求解预计分量关于零偏的导数，注意在这里我们始终求解的都是预积分对i时刻的状态量的导数，正是由于在i~j时刻认为零偏不变，所以我们才能递推求解预积分对零偏的导数
              *      2. 协方差矩阵用于设定权重
              */
             jacobian = F * jacobian;
@@ -232,6 +232,8 @@ class IntegrationBase
     Eigen::Vector3d acc_1, gyr_1;
 
     const Eigen::Vector3d linearized_acc, linearized_gyr;
+    // notes: 除非重新计算预积分，否则零偏不会发生变化，变化的只是增量；这也是为什么对零偏的雅克比一旦计算完成就不会发生变化了一样
+    // notes: 预积分一旦计算完成，就只会与零偏相关了，与其他状态量无关，其更新是通过对零偏的一阶泰勒展开来计算的
     Eigen::Vector3d linearized_ba, linearized_bg;
 
     Eigen::Matrix<double, 15, 15> jacobian, covariance;

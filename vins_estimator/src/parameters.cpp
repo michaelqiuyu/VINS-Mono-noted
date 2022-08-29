@@ -130,7 +130,7 @@ void readParameters(ros::NodeHandle &n)
      * rolling shutter vs global shutter: https://blog.csdn.net/danmeng8068/article/details/80726514
      *
      */
-    ROLLING_SHUTTER = fsSettings["rolling_shutter"];
+    ROLLING_SHUTTER = fsSettings["rolling_shutter"];  // 只有卷帘相机才有TR
     if (ROLLING_SHUTTER)
     {
         TR = fsSettings["rolling_shutter_tr"];

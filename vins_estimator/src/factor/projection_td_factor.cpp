@@ -1,6 +1,6 @@
 #include "projection_td_factor.h"
 
-Eigen::Matrix2d ProjectionTdFactor::sqrt_info;
+Eigen::Matrix2d ProjectionTdFactor::sqrt_info;  // sqrt_info = FOCAL_LENGTH / 1.5 * Matrix2d::Identity()
 double ProjectionTdFactor::sum_t;
 
 ProjectionTdFactor::ProjectionTdFactor(const Eigen::Vector3d &_pts_i, const Eigen::Vector3d &_pts_j, 
@@ -47,8 +47,27 @@ bool ProjectionTdFactor::Evaluate(double const *const *parameters, double *resid
 
     double td = parameters[4][0];
 
+    /**
+     * 这里传感器的机制：t_imu = t_img + td，图像和imu发射信号，有一个接收机接受信号
+     *      1. 假设图像没有时延，imu有时延，那么图像信号发出就被收到，imu的信号需要td的时间才能被收到
+     *      2. 假设在时间t的时候图像和imu同时发射信号，那么接收机接收到的图像的时间为t，接受到的imu的时间为t+td，这也是t_imu = t_img + td的由来
+     *      3. 但是在接收机接收到t+td的imu信号的时候，接收机还会接收到t+td的图像信号，因此在t+td同时接收到的图像和imu信号并不是对应的
+     *      4. 实际上图像和imu的对应关系应该是：从这里看图像时间是更大的，与公式t_imu = t_img + td相悖，一定要理解清楚
+     *         image   |       |       |       |       |       |
+     *         imu    |       |       |       |       |       |
+     *      5. 由于在做image与imu的对齐的时候已经使用了td_i和td_j了，因此，这里实际上image领先的时间为td - td_i和td - td_j了
+     *      6. 为了避免重新对齐image和imu，并且避免重新预积分，因此选择调整image上像素的坐标，也就是根据速度计算与imu对齐的像素位置
+     *
+     * 卷帘相机：
+     *      1. 卷帘相机按照逐行的方式曝光，因此第一行最先曝光，最后一行最后曝光
+     *      2. 接收机接受的时间是ROW/2的时候发出的，在这个时候，前面的行已经曝光的，后面的行还没有曝光
+     *      3. 也就是说在ROW/2之前的行的像素领先于ROW/2行的像素，需要将像素对齐到ROW/2对应的时间，因此在ROW/2行之前的像素应该按照运动趋势正向补偿
+     *      4. 在ROW/2之后的行的像素则正好相反，时间发出的时候还没有曝光，因此，ROW/2行之后的像素应该反向补偿
+     *      5. 注意代码里面使用的是减号，即pts_i - TR / ROW * row_i * velocity_i，当row_i<ROW/2时，正好就是正向补偿
+     */
+
     Eigen::Vector3d pts_i_td, pts_j_td;
-    pts_i_td = pts_i - (td - td_i + TR / ROW * row_i) * velocity_i;
+    pts_i_td = pts_i - (td - td_i + TR / ROW * row_i) * velocity_i;  // 注意速度的第三维是1，因此不会改变pts_i_td和pts_j是相机系归一化坐标
     pts_j_td = pts_j - (td - td_j + TR / ROW * row_j) * velocity_j;
     Eigen::Vector3d pts_camera_i = pts_i_td / inv_dep_i;
     Eigen::Vector3d pts_imu_i = qic * pts_camera_i + tic;
@@ -57,14 +76,43 @@ bool ProjectionTdFactor::Evaluate(double const *const *parameters, double *resid
     Eigen::Vector3d pts_camera_j = qic.inverse() * (pts_imu_j - tic);
     Eigen::Map<Eigen::Vector2d> residual(residuals);
 
+    /**
+     * u = fx * x + cx, v = fy * y + cy
+     *
+     * (u - u0)^2 + (v - v0)^2 = fx^2 * (x - x0)^2 + fy^2 * (y - y0)^2 ！= (x - x0)^2 + (y - y0)^2
+     * 如果fx和fy并不接近，那么优化归一化相机系的残差相当于认为给重投影误差加了权重，这样做并不符合重投影误差的定义，其与重投影误差并不等效
+     */
+
 #ifdef UNIT_SPHERE_ERROR 
     residual =  tangent_base * (pts_camera_j.normalized() - pts_j_td.normalized());
 #else
     double dep_j = pts_camera_j.z();
+
     residual = (pts_camera_j / dep_j).head<2>() - pts_j_td.head<2>();
 #endif
 
+    /**
+     * 如果fx = fy，那么(x - x0)^2 + (y - y0)^2 = [(u - u0)^2 + (v - v0)^2] / fx^2
+     * residual^2 = sqrt_info^2 * residual^2 = (FOCAL_LENGTH / 1.5)^2 * (x - x0)^2 + (y - y0)^2 = [(u - u0)^2 + (v - v0)^2] * (FOCAL_LENGTH / (1.5 * fx))^2
+     * 令fx = k * FOCAL_LENGTH, e1 = sqrt((u - u0)^2 + (v - v0)^2), e2 = residual, 那么
+     * e2 = e1 / (1.5 * k)，其中e1是重投影误差；因为这里不止视觉残差，这里的1.5有降低视觉权重的逻辑在里面，这里的参数应该是都是调参的结果
+     */
     residual = sqrt_info * residual;
+
+    /**
+     * 总体投影过程：相机系i帧下的地图点→body系i帧→世界系→body系j帧→相机系j帧→相机系j帧归一化
+     * 总体投影方程：e = pcj / pcj(2) - pcj_td
+     *            pcj = Rbc.t * (Rwbj.t * (Rwbi * (Rbc * pci_td / λ + tbc) + twbi) - Rwbj.t * twbj) - Rbc.t * tbc
+     *            pci_td = pci - (td - td_i + TR / ROW * row_i) * velocity_i
+     *
+     * 对旋转一律使用右扰动，对旋转矩阵求导和对四元数求导等价，在这里都是对轴角进行求导，因此在四元数的情况下，最后一列总是0，相应的ComputeJacobian函数是(I, 0).t
+     *
+     * e = (e1) = (x / z - u)，其中pcj = (x, y, z).t
+     *     (e2) = (y / z - v)
+     * e对pcj的导数为reduce，如下所示
+     *
+     * 与没有时延相比，仅仅只是在求解尺度的jacobian的时候有轻微的差别，然后添加了一个对时延的jacobian
+     */
 
     if (jacobians)
     {
@@ -84,55 +132,56 @@ bool ProjectionTdFactor::Evaluate(double const *const *parameters, double *resid
                      - x1 * x3 / pow(norm, 3),            - x2 * x3 / pow(norm, 3),            1.0 / norm - x3 * x3 / pow(norm, 3);
         reduce = tangent_base * norm_jaco;
 #else
+        // e对pcj的jacobian
         reduce << 1. / dep_j, 0, -pts_camera_j(0) / (dep_j * dep_j),
             0, 1. / dep_j, -pts_camera_j(1) / (dep_j * dep_j);
 #endif
-        reduce = sqrt_info * reduce;
+        reduce = sqrt_info * reduce;  // 链式求导，添加一个系数阵
 
-        if (jacobians[0])
+        if (jacobians[0])  // 视觉重投影误差对i帧的旋转和平移的jacobian
         {
             Eigen::Map<Eigen::Matrix<double, 2, 7, Eigen::RowMajor>> jacobian_pose_i(jacobians[0]);
 
             Eigen::Matrix<double, 3, 6> jaco_i;
-            jaco_i.leftCols<3>() = ric.transpose() * Rj.transpose();
-            jaco_i.rightCols<3>() = ric.transpose() * Rj.transpose() * Ri * -Utility::skewSymmetric(pts_imu_i);
+            jaco_i.leftCols<3>() = ric.transpose() * Rj.transpose();  // pcj对i帧平移的jacobian
+            jaco_i.rightCols<3>() = ric.transpose() * Rj.transpose() * Ri * -Utility::skewSymmetric(pts_imu_i);  // pcj对i帧旋转的jacobian
 
             jacobian_pose_i.leftCols<6>() = reduce * jaco_i;
             jacobian_pose_i.rightCols<1>().setZero();
         }
 
-        if (jacobians[1])
+        if (jacobians[1])  // 视觉重投影误差对j帧的旋转和平移的jacobian
         {
             Eigen::Map<Eigen::Matrix<double, 2, 7, Eigen::RowMajor>> jacobian_pose_j(jacobians[1]);
 
             Eigen::Matrix<double, 3, 6> jaco_j;
-            jaco_j.leftCols<3>() = ric.transpose() * -Rj.transpose();
-            jaco_j.rightCols<3>() = ric.transpose() * Utility::skewSymmetric(pts_imu_j);
+            jaco_j.leftCols<3>() = ric.transpose() * -Rj.transpose();  // pcj对j帧平移的jacobian
+            jaco_j.rightCols<3>() = ric.transpose() * Utility::skewSymmetric(pts_imu_j);  // pcj对j帧旋转的jacobian
 
             jacobian_pose_j.leftCols<6>() = reduce * jaco_j;
             jacobian_pose_j.rightCols<1>().setZero();
         }
-        if (jacobians[2])
+        if (jacobians[2])  // 视觉重投影误差对外参的旋转和平移的jacobian
         {
             Eigen::Map<Eigen::Matrix<double, 2, 7, Eigen::RowMajor>> jacobian_ex_pose(jacobians[2]);
             Eigen::Matrix<double, 3, 6> jaco_ex;
-            jaco_ex.leftCols<3>() = ric.transpose() * (Rj.transpose() * Ri - Eigen::Matrix3d::Identity());
+            jaco_ex.leftCols<3>() = ric.transpose() * (Rj.transpose() * Ri - Eigen::Matrix3d::Identity());  // pcj对外参平移的jacobian
             Eigen::Matrix3d tmp_r = ric.transpose() * Rj.transpose() * Ri * ric;
             jaco_ex.rightCols<3>() = -tmp_r * Utility::skewSymmetric(pts_camera_i) + Utility::skewSymmetric(tmp_r * pts_camera_i) +
-                                     Utility::skewSymmetric(ric.transpose() * (Rj.transpose() * (Ri * tic + Pi - Pj) - tic));
+                                     Utility::skewSymmetric(ric.transpose() * (Rj.transpose() * (Ri * tic + Pi - Pj) - tic));  // pcj对外参旋转的jacobian
             jacobian_ex_pose.leftCols<6>() = reduce * jaco_ex;
             jacobian_ex_pose.rightCols<1>().setZero();
         }
-        if (jacobians[3])
+        if (jacobians[3])  // 视觉重投影误差对尺度的jacobian
         {
             Eigen::Map<Eigen::Vector2d> jacobian_feature(jacobians[3]);
-            jacobian_feature = reduce * ric.transpose() * Rj.transpose() * Ri * ric * pts_i_td * -1.0 / (inv_dep_i * inv_dep_i);
+            jacobian_feature = reduce * ric.transpose() * Rj.transpose() * Ri * ric * pts_i_td * -1.0 / (inv_dep_i * inv_dep_i);  // pcj对尺度的jacobian，与没有时延相比，就是将pts_i变成了pts_i_td
         }
-        if (jacobians[4])
+        if (jacobians[4])  // 视觉重投影误差对时延的jacobian
         {
             Eigen::Map<Eigen::Vector2d> jacobian_td(jacobians[4]);
             jacobian_td = reduce * ric.transpose() * Rj.transpose() * Ri * ric * velocity_i / inv_dep_i * -1.0  +
-                          sqrt_info * velocity_j.head(2);
+                          sqrt_info * velocity_j.head(2);  // e对时延的jacobian
         }
     }
     sum_t += tic_toc.toc();
@@ -140,6 +189,7 @@ bool ProjectionTdFactor::Evaluate(double const *const *parameters, double *resid
     return true;
 }
 
+// 没有使用
 void ProjectionTdFactor::check(double **parameters)
 {
     double *res = new double[2];

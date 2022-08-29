@@ -11,7 +11,7 @@
 using namespace Eigen;
 using namespace std;
 
-
+Eigen::Matrix3d Hat(const Eigen::Vector3d &v);
 
 struct SFMFeature
 {

@@ -102,6 +102,14 @@ bool GlobalSFM::solveFrameByPnP(Matrix3d &R_initial, Vector3d &P_initial, int i,
 
 }
 
+Eigen::Matrix3d Hat(const Eigen::Vector3d &v) {
+    Eigen::Matrix3d mat;
+    mat << 0, -v(2, 0), v(1, 0),
+           v(2, 0), 0, -v(0, 0),
+           -v(1, 0), v(0, 0), 0;
+    return mat;
+}
+
 /**
  * @brief 根据两帧索引和位姿计算对应特征点的三角化位置
  * 
@@ -147,6 +155,45 @@ void GlobalSFM::triangulateTwoFrames(int frame0, Eigen::Matrix<double, 3, 4> &Po
 			sfm_f[j].position[1] = point_3d(1);
 			sfm_f[j].position[2] = point_3d(2);
 			//cout << "trangulated : " << frame1 << "  3d point : "  << j << "  " << point_3d.transpose() << endl;
+
+#if 0
+        // 测试：如果认为三维点在第一帧的射线上，只有深度为变量，求解深度值并恢复三维点，与DLT的三维点做比较
+        Eigen::Vector3d u1 = Eigen::Vector3d(point0(0, 0), point0(1, 0), 1);
+        Eigen::Vector3d u2 = Eigen::Vector3d(point1(0, 0), point1(1, 0), 1);
+
+        Eigen::Matrix3d R1 = Pose0.block<3, 3>(0, 0);
+        Eigen::Vector3d t1 = Pose0.block<3, 1>(0, 3);
+
+        Eigen::Matrix3d R2 = Pose1.block<3, 3>(0, 0);
+        Eigen::Vector3d t2 = Pose1.block<3, 1>(0, 3);
+
+        Eigen::Vector3d p1 = Hat(u2) * R2 * R1.transpose() * u1;
+        Eigen::Vector3d p2 = -Hat(u2) * (t2 - R2 * R1.transpose() * t1);
+
+        double s = (p1.transpose() * p2)(0, 0) / (p1.transpose() * p1)(0, 0);
+        std::cout << "s = " << s << std::endl;
+
+        Eigen::Vector3d point = s * R1.transpose() * u1 - R1.transpose() * t1;
+        std::cout << "根据其在第一帧下的投影为point0，得到的世界点的坐标为：" << point.transpose() << std::endl;
+
+        std::cout << "DLT三角化的结果为：" << point_3d.transpose() << std::endl;
+
+        Eigen::Vector3d error = point - point_3d;
+        if (error.norm() > 0.1)
+            std::cout << "此时的误差不可忽略，误差为：" << error.transpose() << ", norm = " << error.norm() << std::endl;
+
+//        Eigen::Vector3d dlt_p1 = R1 * point_3d + t1;
+//        Eigen::Vector3d dlt_p2 = R2 * point_3d + t2;
+//        std::cout << "dlt_p1 = " << dlt_p1.transpose() << ", dlt_p2 = " << dlt_p2.transpose() << std::endl;
+//
+//        Eigen::Vector3d s_p1 = R1 * point + t1;
+//        Eigen::Vector3d s_p2 = R2 * point + t2;
+//        Eigen::Vector3d s_p3 = s * u1;
+//        std::cout << "s_p1 = " << s_p1.transpose() << ", s_p2 = " << s_p2.transpose() << ", s_p3 = " << s_p3.transpose() << std::endl;
+
+
+        std::cout << "\n" << std::endl;
+#endif
 		}							  
 	}
 }
@@ -174,6 +221,10 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 			  const Matrix3d relative_R, const Vector3d relative_T,
 			  vector<SFMFeature> &sfm_f, map<int, Vector3d> &sfm_tracked_points)
 {
+    /**
+     * sfm_f获得的地图点，仅仅只是用于做一个单目的GBA，并不会将结果直接更新到特征点管理器中的特征点中
+     * 后面也只是使用到了位姿，并用于重新多帧三角化，而没有使用这里的地图点信息
+     */
 	feature_num = sfm_f.size();
 	//cout << "set 0 and " << l << " as known " << endl;
 	// have relative_r relative_t

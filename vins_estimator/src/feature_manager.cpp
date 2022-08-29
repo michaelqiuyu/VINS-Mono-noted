@@ -293,6 +293,7 @@ void FeatureManager::triangulate(Vector3d Ps[], Vector3d tic[], Matrix3d ric[])
     /**
      * 多帧三角化，利用所有的观测来构建约束，得到最小二乘解
      * 注意这里的计算是在start_frame下进行的，得到的深度也是start_frame坐标系下的深度
+     * 特征点管理器中的特征点并没有在sfm中重建出来
      */
     // 遍历每一个特征点
     for (auto &it_per_id : feature)
@@ -355,6 +356,22 @@ void FeatureManager::triangulate(Vector3d Ps[], Vector3d tic[], Matrix3d ric[])
         //it_per_id->estimated_depth = -b / A;
         //it_per_id->estimated_depth = svd_V[2] / svd_V[3];
         // 得到的深度值实际上就是第一个观察到这个特征点的相机坐标系下的深度值
+        // xc's todo: 仅仅使用了计算的深度，在后面的优化中直接按照在start_frame下的归一化相机系坐标乘以深度得到相机系的三维坐标：
+        /**
+         * 这里隐含了假设：地图点在start_frame下的重投影误差为0，也就是在start_frame的射线上寻找一个深度而已
+         * 但是其实际上的计算又不是按照这个假设求解的，还是按照正常的三角化求解，只获取其深度直接赋值，这不是前后矛盾吗？
+         * 如果按照假设的话，应该只是求解start_frame下的深度s，也就是pw = s * R1.t * u1 - R1.t * t1
+         *
+         * 对于任何一个观测有，u2.hat * (R2 * pw + t2) = 0，可以化简得到sp1 = p2，构建∑||sp1 - p2||^2来求解
+         *
+         * 在initial_sfm.cpp中的triangulateTwoFrames，使用两视图三角化进行测试，发现：
+         *      1. 使用我提出的方法与DLT的方法计算的世界点的坐标大部分时候都相差在2cm以内
+         *      2. 还是有时候相差达到10cm以上
+         * 
+         * 能够运行的原因：
+         *      这里的深度值仅仅只是一个初值，并不会是最终的值，因此只要初值不是非常偏离真值，对最后的结果的影响可能是可以忽略不计的
+         */
+        // xc's todo: 后续可以完整实现仅仅计算深度值的方式构建最小二乘，跑通slam，与原始版本进行对比
         it_per_id.estimated_depth = svd_method;
         //it_per_id->estimated_depth = INIT_DEPTH;
 
