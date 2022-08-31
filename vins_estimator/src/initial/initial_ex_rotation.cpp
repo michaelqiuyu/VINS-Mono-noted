@@ -144,9 +144,17 @@ bool InitialEXRotation::CalibrationExRotation(vector<pair<Vector3d, Vector3d>> c
     //cout << svd.singularValues().transpose() << endl;
     //cout << ric << endl;
 #if 0
-    std::cout << "ric = " << ric << std::endl;
-    std::cout << "奇异值为：" << svd.singularValues().transpose() << std::endl;
-    std::cout << "svd.singularValues().tail<3>() = " << svd.singularValues().tail<3>() << std::endl;
+    if (frame_count < WINDOW_SIZE) {
+        std::cout << "frame_count = " << frame_count << std::endl;
+        std::cout << "ric = " << ric << std::endl;
+        std::cout << "奇异值为：" << svd.singularValues().transpose() << std::endl;
+        std::cout << "svd.singularValues().tail<3>() = " << svd.singularValues().tail<3>() << std::endl;
+
+        Eigen::Matrix4d mat = A.transpose() * A;
+        std::cout << "mat = " << mat << std::endl;
+
+    }
+
 #endif
     Vector3d ric_cov;
     ric_cov = svd.singularValues().tail<3>();  // 最后三个

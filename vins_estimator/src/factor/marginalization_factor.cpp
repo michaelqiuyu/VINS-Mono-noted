@@ -45,7 +45,7 @@ void ResidualBlockInfo::Evaluate()
 
         double sq_norm, rho[3];
 
-        sq_norm = residuals.squaredNorm();  // 获得残差的模
+        sq_norm = residuals.squaredNorm();  // 获得残差的模的平方
         loss_function->Evaluate(sq_norm, rho);  // rho[0]:核函数这个点的值 rho[1]这个点的导数 rho[2]这个点的二阶导数
         //printf("sq_norm: %f, rho[0]: %f, rho[1]: %f, rho[2]: %f\n", sq_norm, rho[0], rho[1], rho[2]);
 
@@ -104,6 +104,11 @@ MarginalizationInfo::~MarginalizationInfo()
  */
 void MarginalizationInfo::addResidualBlockInfo(ResidualBlockInfo *residual_block_info)
 {
+    /**
+     * 保存所有的残差块
+     * 保存所有的参数块以及其对应的global_size
+     * 保存所有的待边缘化的参数块以及其对应的global_size
+     */
     factors.emplace_back(residual_block_info);  // 残差块收集起来
 
     std::vector<double *> &parameter_blocks = residual_block_info->parameter_blocks;    // 这个是和该约束相关的参数块

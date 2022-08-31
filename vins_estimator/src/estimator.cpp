@@ -643,7 +643,7 @@ bool Estimator::visualInitialAlign()
     f_manager.triangulate(Ps, &(TIC_TMP[0]), &(RIC[0]));
 
     double s = (x.tail<1>())(0);
-#if 1
+#if 0
     std::cout << "***************************尺度s = " << s << std::endl;
 #endif
 
@@ -876,10 +876,23 @@ void Estimator::vector2double()  // 赋初值
 void Estimator::double2vector()
 {
     // 取出优化前的第一帧的位姿
+    // 初始化之前，其yaw角为0，这也可以从视觉惯性对齐中获取世界系的逻辑中得知；初始化之后，窗口的第一帧不再是系统的第一帧了，因此yaw不为0
     Vector3d origin_R0 = Utility::R2ypr(Rs[0]);
     Vector3d origin_P0 = Ps[0];
+#if 1
+    std::cout << "优化更新前第一帧的yaw为：" << origin_R0.x() << std::endl;
+    std::cout << "优化更新前第一帧的平移为：" << origin_P0.transpose() << std::endl;
+#endif
 
-    if (failure_occur)
+    /**
+     * notes: 以下操作的目的是为了维持窗口第一帧的yaw角不变，第一帧的位移不变
+     *
+     * 值得注意的是，即使在初始化之前，也没有固定住某一帧的位姿，也就是说位姿可以任意漂移和旋转；然后再通过yaw角补偿变换一下
+     */
+    // xc's todo: 窗口第一帧的yaw角和位移为什么不应该更新？
+    
+    
+    if (failure_occur)  // 初始值为false
     {
         origin_R0 = Utility::R2ypr(last_R0);
         origin_P0 = last_P0;
@@ -892,23 +905,35 @@ void Estimator::double2vector()
                                                       para_Pose[0][5]).toRotationMatrix());
     // yaw角差
     double y_diff = origin_R0.x() - origin_R00.x();
-    //TODO
+    /**
+     * Rs[0] = Ry2Rp2Rr2, Ropt = Ry1Rp1Rr1
+     * y_diff = y2 - y1
+     * rot_diff = R(y2 - y1)
+     *
+     * rot_diff * Ropt = R(y2 - y1) * Ry1Rp1Rr1 = Ry2Rp1Rr1，因此窗口第一帧的yaw角度并没有发生变化，其他帧的位姿做相同的变换
+     */
     Matrix3d rot_diff = Utility::ypr2R(Vector3d(y_diff, 0, 0));
     // 接近万象节死锁的问题 https://blog.csdn.net/AndrewFan/article/details/60981437
     if (abs(abs(origin_R0.y()) - 90) < 1.0 || abs(abs(origin_R00.y()) - 90) < 1.0)
     {
+        // xc's todo: 万向节死锁的时候不信任优化结果
         ROS_DEBUG("euler singular point!");
         rot_diff = Rs[0] * Quaterniond(para_Pose[0][6],
                                        para_Pose[0][3],
                                        para_Pose[0][4],
                                        para_Pose[0][5]).toRotationMatrix().transpose();
+        /**
+         * rot_diff = Rs[0] * Ropt.t
+         * rot_diff * Ropt = Rs[0] * Ropt.t * Ropt = Rs[0]
+         * 在万向节死锁的时候，直接将窗口第一帧的位姿恢复，其他帧的位姿做相同的变换
+         */
     }
 
     for (int i = 0; i <= WINDOW_SIZE; i++)
     {
         // 保持第1帧的yaw不变
         Rs[i] = rot_diff * Quaterniond(para_Pose[i][6], para_Pose[i][3], para_Pose[i][4], para_Pose[i][5]).normalized().toRotationMatrix();
-        // 保持第1帧的位移不变
+        // 保持第1帧的位移不变：pi - p0 = R * (pi - p0)，对向量执行相同的变换
         Ps[i] = rot_diff * Vector3d(para_Pose[i][0] - para_Pose[0][0],
                                 para_Pose[i][1] - para_Pose[0][1],
                                 para_Pose[i][2] - para_Pose[0][2]) + origin_P0;
@@ -925,6 +950,16 @@ void Estimator::double2vector()
                           para_SpeedBias[i][7],
                           para_SpeedBias[i][8]);
     }
+#if 1
+    Vector3d R0_temp = Utility::R2ypr(Rs[0]);
+    std::cout << "优化更新后的第一帧yaw为：" << R0_temp.x() << std::endl;
+    std::cout << "优化更新前第一帧的平移为：" << Ps[0].transpose() << std::endl;
+#endif
+    // notes: 经过测试后，优化更新前后的第一帧的yaw是一样的，优化更新前后的第一帧的位移是一样的，这与理论是一样的；
+
+    // xc's todo: 窗口优化的时候，如何将外部的约束加入到窗口中？为什么仅仅只是yaw角补偿就行了
+    // ORB-SLAM中使用共视图，将局部地图之外的关键帧的位姿固定从而限定了局部地图中关键帧的优化，否则的话，每次优化都可以整体任意偏移和旋转
+    // 在这里是如何限制窗口内的帧的位姿的变动的？
 
     for (int i = 0; i < NUM_OF_CAM; i++)
     {
@@ -1084,7 +1119,7 @@ void Estimator::optimization()
         // 时间过长这个约束就不可信了
         if (pre_integrations[j]->sum_dt > 10.0)
             continue;
-        IMUFactor* imu_factor = new IMUFactor(pre_integrations[j]);  // costFunction
+        IMUFactor* imu_factor = new IMUFactor(pre_integrations[j]);  // costFunction，注意j是从1开始的
         problem.AddResidualBlock(imu_factor, NULL, para_Pose[i], para_SpeedBias[i], para_Pose[j], para_SpeedBias[j]);
     }
     int f_m_cnt = 0;
@@ -1111,7 +1146,7 @@ void Estimator::optimization()
             {
                 continue;
             }
-#if 1
+#if 0
             std::cout << "it_per_id.feature_per_frame[0].cur_td = " << it_per_id.feature_per_frame[0].cur_td << std::endl;
             std::cout << "it_per_frame.cur_td = " << it_per_frame.cur_td << std::endl;
 #endif
@@ -1209,7 +1244,6 @@ void Estimator::optimization()
     // 把优化后double -> eigen
     double2vector();
     // Step 4 边缘化
-    // 科普一下舒尔补
     TicToc t_whole_marginalization;
     if (marginalization_flag == MARGIN_OLD)
     {
@@ -1255,7 +1289,7 @@ void Estimator::optimization()
                 IMUFactor* imu_factor = new IMUFactor(pre_integrations[1]);
                 ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(imu_factor, NULL,
                                                                            vector<double *>{para_Pose[0], para_SpeedBias[0], para_Pose[1], para_SpeedBias[1]},
-                                                                           vector<int>{0, 1});  // 这里就是第0和1个参数块是需要被边缘化的
+                                                                           vector<int>{0, 1});  // 这里就是第0和1个参数块是需要被边缘化的，也就是para_Pose[0], para_SpeedBias[0]
                 marginalization_info->addResidualBlockInfo(residual_block_info);
             }
         }
@@ -1271,7 +1305,7 @@ void Estimator::optimization()
                 ++feature_index;
 
                 int imu_i = it_per_id.start_frame, imu_j = imu_i - 1;
-                // 只找能被第0帧看到的特征点
+                // notes：只找能被第0帧看到的特征点，这些点才是要被边缘化的
                 if (imu_i != 0)
                     continue;
 
@@ -1292,7 +1326,7 @@ void Estimator::optimization()
                                                                           it_per_id.feature_per_frame[0].uv.y(), it_per_frame.uv.y());
                         ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(f_td, loss_function,
                                                                                         vector<double *>{para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose[0], para_Feature[feature_index], para_Td[0]},
-                                                                                        vector<int>{0, 3});
+                                                                                        vector<int>{0, 3});  // 这里第0个和第3个参数块是需要被边缘化的，也就是para_Pose[imu_i]和para_Feature[feature_index]
                         marginalization_info->addResidualBlockInfo(residual_block_info);
                     }
                     else
@@ -1300,7 +1334,7 @@ void Estimator::optimization()
                         ProjectionFactor *f = new ProjectionFactor(pts_i, pts_j);
                         ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(f, loss_function,
                                                                                        vector<double *>{para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose[0], para_Feature[feature_index]},
-                                                                                       vector<int>{0, 3});  // 这里第0帧和地图点被margin
+                                                                                       vector<int>{0, 3});  // 这里第0个和第3个参数块是需要被边缘化的，也就是para_Pose[imu_i]和para_Feature[feature_index]
                         marginalization_info->addResidualBlockInfo(residual_block_info);
                     }
                 }
