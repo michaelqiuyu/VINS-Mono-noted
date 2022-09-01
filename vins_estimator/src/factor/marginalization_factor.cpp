@@ -71,7 +71,7 @@ void ResidualBlockInfo::Evaluate()
          * Cauchy: ρ(s) = log(1 + s)   →   ρ'(s) = (1 + s)^(-1)   →   ρ''(s) = -(1 + s)^(-2)
          *
          * Arctan: ρ(s) = arctan(s)   →   ρ'(s) = (1 + s^2)^(-1)   →   ρ''(s) = -2 * s * (1 + s^2)^(-2)
-         * 
+         *
          * Tolerant: ρ(s) = b * log(1 + exp((s - a) / b)) - b * log(1 + exp(-a / b))   →
          *           ρ'(s) = exp((s - a) / b) / (1 + exp((s - a) / b))   →
          *           ρ''(s) = exp((s - a) / b) / (b * (1 + exp((s - a) / b))^2)
@@ -80,7 +80,7 @@ void ResidualBlockInfo::Evaluate()
          */
 
         // https://github.com/ceres-solver/ceres-solver/blob/master/internal/ceres/corrector.cc#L51
-        if ((sq_norm == 0.0) || (rho[2] <= 0.0))  // 柯西核p = log(s+1),rho[2]<＝0始终成立，一般核函数二阶导数都是小于0
+        if ((sq_norm == 0.0) || (rho[2] <= 0.0))
         {
             // sq_norm为0没有办法进行else中的操作，不能除0
             // rho[2]<=0是outlier region，直接降低这个residual的权重，降低的幅度是sqrt_rho1_(在outlier的时候，一般小于1)
@@ -88,7 +88,7 @@ void ResidualBlockInfo::Evaluate()
             alpha_sq_norm_ = 0.0;
         }
         else
-        {
+        {  // Triggs证明：此种情况下，性能较差
             // inlier region；一般要求rho[1]与rho[2]同正，那么D一定大于1
             const double D = 1.0 + 2.0 * sq_norm * rho[2] / rho[1];
             // 这里的alpha也就是上述网址中的Theory部分的alpha
