@@ -54,22 +54,50 @@ void ResidualBlockInfo::Evaluate()
         /**
          * notes:
          *      1. 此处的详细论述请见：http://ceres-solver.org/nnls_modeling.html?highlight=loss#_CPPv4N5ceres12LossFunctionE
+         *
+         * 当residual很大的时候，需要根据robust kernel来降低大的residual的权重
+         * rho[1]一般并不会小于1，一般只有在residual比较大的时候开始小于1，这也是为什么ceres-solver文档将其称为outlier region
+         * rho[2]一般并不会小于0，一般只有在residual比较大的时候开始小于1，这也是为什么ceres-solver文档将其称为outlier region
          */
 
+        /**
+         * Trivial: ρ(s) = s   →   ρ'(s) = 1   →   ρ''(s) = 0
+         *
+         * Huber: ρ(s) = s                s <= 1   →   ρ'(s) = 1         s <= 1   →   ρ''(s) = 0                s <= 1
+         *               2 * sqrt(s) - 1  s > 1                s^(-0.5)  s > 1                -0.5 * s^(-1.5)  s > 1
+         *
+         * SoftLone: ρ(s) = 2 * ((1 + s)^0.5 - 1)   →   ρ'(s) = (1 + s)^(-0.5)   →   ρ''(s) = -0.5 * (1 + s)^(-1.5)
+         *
+         * Cauchy: ρ(s) = log(1 + s)   →   ρ'(s) = (1 + s)^(-1)   →   ρ''(s) = -(1 + s)^(-2)
+         *
+         * Arctan: ρ(s) = arctan(s)   →   ρ'(s) = (1 + s^2)^(-1)   →   ρ''(s) = -2 * s * (1 + s^2)^(-2)
+         * 
+         * Tolerant: ρ(s) = b * log(1 + exp((s - a) / b)) - b * log(1 + exp(-a / b))   →
+         *           ρ'(s) = exp((s - a) / b) / (1 + exp((s - a) / b))   →
+         *           ρ''(s) = exp((s - a) / b) / (b * (1 + exp((s - a) / b))^2)
+         *
+         * 从以上的常用核函数看来，一般都是ρ'(s) <= 1, ρ''(s) <= 0
+         */
+
+        // https://github.com/ceres-solver/ceres-solver/blob/master/internal/ceres/corrector.cc#L51
         if ((sq_norm == 0.0) || (rho[2] <= 0.0))  // 柯西核p = log(s+1),rho[2]<＝0始终成立，一般核函数二阶导数都是小于0
         {
+            // sq_norm为0没有办法进行else中的操作，不能除0
+            // rho[2]<=0是outlier region，直接降低这个residual的权重，降低的幅度是sqrt_rho1_(在outlier的时候，一般小于1)
             residual_scaling_ = sqrt_rho1_;
             alpha_sq_norm_ = 0.0;
         }
         else
         {
+            // inlier region；一般要求rho[1]与rho[2]同正，那么D一定大于1
             const double D = 1.0 + 2.0 * sq_norm * rho[2] / rho[1];
             // 这里的alpha也就是上述网址中的Theory部分的alpha
-            const double alpha = 1.0 - sqrt(D);
+            const double alpha = 1.0 - sqrt(D);  // alpha < 0 → 1 - alpha > 1
+            // 在inlier region时，sqrt_rho1_一般不小于1，此时降低权重靠1 - alpha > 1
             residual_scaling_ = sqrt_rho1_ / (1 - alpha);
             alpha_sq_norm_ = alpha / sq_norm;
         }
-        // 这里就相当于残差雅克比都乘上sqrt_rho1_，即核函数所在的点的一阶导，基本都是小于1
+        // 这里就相当于雅克比都乘上sqrt_rho1_，即核函数所在的点的一阶导，基本都是小于1
         for (int i = 0; i < static_cast<int>(parameter_blocks.size()); i++)
         {
             jacobians[i] = sqrt_rho1_ * (jacobians[i] - alpha_sq_norm_ * residuals * (residuals.transpose() * jacobians[i]));
