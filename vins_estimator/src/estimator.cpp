@@ -169,8 +169,20 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     else
         // 否则移除上一帧
         marginalization_flag = MARGIN_SECOND_NEW;
+    /**
+     * 通过下面的测试代码可以看到：
+     *      1. 当为old的时候就会生成关键帧，当为new的时候只会有里程计的信息，不会生成关键帧
+     *      2. 从后面可以看到，如果为new，那么只是会把新的一帧与最后一帧的预积分进行合并，并删除最后一帧看到的地图点，当然这一帧的位姿也就没有了
+     *      3. 这样的删除操作并没有充分使用数据，而且也会使得关键帧的生成非常频繁
+     */
 #if 0
-    std::cout << "marginalization_flag = " << marginalization_flag << std::endl;
+    getchar();
+    std::cout << "marginalization_flag = ";
+    if (marginalization_flag == MARGIN_OLD) {
+        std::cout << "MARGIN_OLD" << std::endl;
+    } else {
+        std::cout << "MARGIN_SECOND_NEW" << std::endl;
+    }
 #endif
 
     ROS_DEBUG("this frame is--------------------%s", marginalization_flag ? "reject" : "accept");
@@ -879,7 +891,7 @@ void Estimator::double2vector()
     // 初始化之前，其yaw角为0，这也可以从视觉惯性对齐中获取世界系的逻辑中得知；初始化之后，窗口的第一帧不再是系统的第一帧了，因此yaw不为0
     Vector3d origin_R0 = Utility::R2ypr(Rs[0]);
     Vector3d origin_P0 = Ps[0];
-#if 1
+#if 0
     std::cout << "优化更新前第一帧的yaw为：" << origin_R0.x() << std::endl;
     std::cout << "优化更新前第一帧的平移为：" << origin_P0.transpose() << std::endl;
 #endif
@@ -890,8 +902,7 @@ void Estimator::double2vector()
      * 值得注意的是，即使在初始化之前，也没有固定住某一帧的位姿，也就是说位姿可以任意漂移和旋转；然后再通过yaw角补偿变换一下
      */
     // xc's todo: 窗口第一帧的yaw角和位移为什么不应该更新？
-    
-    
+
     if (failure_occur)  // 初始值为false
     {
         origin_R0 = Utility::R2ypr(last_R0);
@@ -950,7 +961,7 @@ void Estimator::double2vector()
                           para_SpeedBias[i][7],
                           para_SpeedBias[i][8]);
     }
-#if 1
+#if 0
     Vector3d R0_temp = Utility::R2ypr(Rs[0]);
     std::cout << "优化更新后的第一帧yaw为：" << R0_temp.x() << std::endl;
     std::cout << "优化更新前第一帧的平移为：" << Ps[0].transpose() << std::endl;
@@ -1242,15 +1253,33 @@ void Estimator::optimization()
     ROS_DEBUG("Iterations : %d", static_cast<int>(summary.iterations.size()));
     ROS_DEBUG("solver costs: %f", t_solver.toc());
     // 把优化后double -> eigen
-    double2vector();
+    double2vector();  // 将优化后的状态量保存，某些状态量的优化结果会被进一步更新
     // Step 4 边缘化
     TicToc t_whole_marginalization;
+    /**
+     * 需要注意的是：上一次的边缘化形成的约束一定对本次待边缘化的变量形成约束，才会将上一次边缘化形成的约束加入到整个marginalization_info中，否则是不会添加的
+     * 这里所说的对应着边缘化的时候的B矩阵不应该有全0行，如果有的话，直接删除即可，不需要这个约束
+     *
+     * 对整个边缘化过程的剖析：注意一定要出现old，否则一直没有办法形成last_marginalization_info
+     *      1. 为了产生last_marginalization_info，从某一帧开始一定要出现old；如果刚开始是new，那么实际上窗口的第一帧就是整个系统的第一帧，系统一直在合并新来的帧与窗口最后一帧；
+     *      2. 一旦某一帧开始出现old，last_marginalization_info被创建出来，边缘化后对窗口内的某些参数块形成了约束，在后面会使用到
+     *      3. 如果是从old到old，那么需要添加的约束有窗口第一帧与第二帧的IMU预积分约束，第一帧就看到的地图点的视觉重投影约束，以及上一次边缘化形成的约束对本次第一帧的位姿、速度和零偏有约束
+     *      4. 如果是old到new，那么只需要添加上一次边缘化形成的约束对本次窗口最后一帧的位姿有约束
+     *          4.1 为什么本次不添加被最后一帧看到的重投影约束：预积分会合并，但是窗口最后一帧的视觉信息（观测到的地图点）是直接删除的，因此最后一帧并没有与窗口中的其他帧产生视觉重投影的约束了，因此也就没有必要构建与最后一帧相关的重投影约束了
+     *              而在边缘化第1帧和第2帧的时候，第1帧的观测依然存在，其依然应该对窗口内的帧产生约束，故而添加重投影约束；从因子图的角度理解，我们要边缘化的约束是待边缘化变量与非边缘化变量有边连接，在这里如果将最后一帧的地图点删除，连接也就断了
+     *              比较奇怪的是，后面保留了前面的预积分约束中与最后一帧有关的约束，这里可以这样理解：直接删除位姿和地图点的话，就不需要做边缘化构建约束了，但是前面边缘化的结果依然在，如果可以的话，依然需要构建约束
+     *          4.2 为什么不添加窗口倒数第二帧与窗口最后一帧的预积分约束：最后一帧与新进来的帧合并成为最后一帧，倒数第二帧与窗口最后一帧的预积分约束包含在合并的预积分中了，并没有被删除；
+     *              不像第1帧和第二帧直接的预积分约束，由于第1帧不在窗口中而消失了
+     *
+     *      5. 如果是new到new，那么依然只需要添加上一次边缘化形成的约束对本次窗口最后一帧的位姿有约束
+     *      6. 如果是new到old，那么需要添加的约束有窗口第一帧与第二帧的IMU预积分约束，第一帧就看到的地图点的视觉重投影约束，以及上一次边缘化形成的约束对本次第一帧的位姿、速度和零偏有约束
+     */
     if (marginalization_flag == MARGIN_OLD)
     {
         // 一个用来边缘化操作的对象
         MarginalizationInfo *marginalization_info = new MarginalizationInfo();
         // 这里类似手写高斯牛顿，因此也需要都转成double数组
-        vector2double();
+        vector2double();  // 将经过double2vector后的结果重新赋值给待优化的状态量作为初值
         // 关于边缘化有几点注意的地方
         // 1、找到需要边缘化的参数块，这里是地图点，第0帧位姿，第0帧速度零偏
         // 2、找到构造高斯牛顿下降时跟这些待边缘化相关的参数块有关的残差约束，那就是预积分约束，重投影约束，以及上一次边缘化约束
@@ -1263,7 +1292,7 @@ void Estimator::optimization()
             // last_marginalization_parameter_blocks是上一次边缘化对哪些当前参数块有约束
             for (int i = 0; i < static_cast<int>(last_marginalization_parameter_blocks.size()); i++)
             {
-                // 涉及到的待边缘化的上一次边缘化留下来的当前参数块只有位姿和速度零偏
+                // 上一次边缘化中留下来的参数块包含了本次滑窗起始的位姿、零偏和速度，这个约束也需要考虑进去
                 if (last_marginalization_parameter_blocks[i] == para_Pose[0] ||
                     last_marginalization_parameter_blocks[i] == para_SpeedBias[0])
                     drop_set.push_back(i);
@@ -1283,7 +1312,7 @@ void Estimator::optimization()
          */
         // 只有第1个预积分和待边缘化参数块相连
         {
-            if (pre_integrations[1]->sum_dt < 10.0)
+            if (pre_integrations[1]->sum_dt < 10.0)  // 时间太长，预积分的结果就不可信了
             {
                 // 跟构建ceres约束问题一样，这里也需要得到残差和雅克比
                 IMUFactor* imu_factor = new IMUFactor(pre_integrations[1]);
@@ -1305,7 +1334,7 @@ void Estimator::optimization()
                 ++feature_index;
 
                 int imu_i = it_per_id.start_frame, imu_j = imu_i - 1;
-                // notes：只找能被第0帧看到的特征点，这些点才是要被边缘化的
+                // notes：只找能被第0帧看到的特征点，这些点才是要被边缘化的，因为第0帧是要被边缘化掉的
                 if (imu_i != 0)
                     continue;
 
@@ -1321,6 +1350,10 @@ void Estimator::optimization()
                     // 根据是否约束延时确定残差阵
                     if (ESTIMATE_TD)
                     {
+                        /**
+                         * 在视觉重投影的边缘化的过程中，如果我们只是边缘化位姿，那么会导致fill-in现象，使得整个矩阵不再是稀疏矩阵
+                         * 在这里，我们将位姿和地图点都边缘化了，这样就可以保证整个矩阵的稀疏性了，详细的原理性推导可以参考SLAM14讲第10章的部分
+                         */
                         ProjectionTdFactor *f_td = new ProjectionTdFactor(pts_i, pts_j, it_per_id.feature_per_frame[0].velocity, it_per_frame.velocity,
                                                                           it_per_id.feature_per_frame[0].cur_td, it_per_frame.cur_td,
                                                                           it_per_id.feature_per_frame[0].uv.y(), it_per_frame.uv.y());
@@ -1342,7 +1375,7 @@ void Estimator::optimization()
         }
         // 所有的残差块都收集好了
         TicToc t_pre_margin;
-        // 进行预处理
+        // 进行预处理：计算每个因子的残差和jacobian，根据Robust Kernel对残差也jacobian进行缩放，对所有的参数块进行备份
         marginalization_info->preMarginalize();
         ROS_DEBUG("pre marginalization %f ms", t_pre_margin.toc());
         
@@ -1351,8 +1384,8 @@ void Estimator::optimization()
         marginalization_info->marginalize();
         ROS_DEBUG("marginalization %f ms", t_margin.toc());
         // 即将滑窗，因此记录新地址对应的老地址
-        std::unordered_map<long, double *> addr_shift;
-        for (int i = 1; i <= WINDOW_SIZE; i++)
+        std::unordered_map<long, double *> addr_shift;  // 随滑窗而变动的参数块的地址才需要变动
+        for (int i = 1; i <= WINDOW_SIZE; i++)  // 注意这里是从1开始递增
         {
             // 位姿和速度都要滑窗移动
             addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i - 1];
@@ -1365,33 +1398,38 @@ void Estimator::optimization()
         {
             addr_shift[reinterpret_cast<long>(para_Td[0])] = para_Td[0];
         }
-        // parameter_blocks实际上就是addr_shift的索引的集合及搬进去的新地址
+        // parameter_blocks实际上就是addr_shift中的没有边缘化的参数块的地址
         vector<double *> parameter_blocks = marginalization_info->getParameterBlocks(addr_shift);
 
         if (last_marginalization_info)
             delete last_marginalization_info;
         last_marginalization_info = marginalization_info;   // 本次边缘化的所有信息
-        last_marginalization_parameter_blocks = parameter_blocks;   // 代表该次边缘化对某些参数块形成约束，这些参数块在滑窗之后的地址
+        last_marginalization_parameter_blocks = parameter_blocks;   // 代表该次边缘化对没有边缘化的参数块形成约束，这些参数块在滑窗之后的地址
         
     }
     else    // 边缘化倒数第二帧
     {
-        // 要求有上一次边缘化的结果同时，即将被margin掉的在上一次边缘化后的约束中
+        /**
+         * 如果一开始就是margine old并且一直都是margin old，那么实际上边缘化部分的代码没有起到任何作用，一直都没有last_marginalization_info创建成功
+         */
+
+        // 要求有上一次边缘化的结果同时，即将被margin掉的(窗口最后一帧的信息)在上一次边缘化后的约束的参数块中
         // 预积分结果合并，因此只有位姿margin掉
         if (last_marginalization_info &&
             std::count(std::begin(last_marginalization_parameter_blocks), std::end(last_marginalization_parameter_blocks), para_Pose[WINDOW_SIZE - 1]))
         {
 
             MarginalizationInfo *marginalization_info = new MarginalizationInfo();
-            vector2double();
+            vector2double();  // 将经过double2vector后的结果重新赋值给待优化的状态量作为初值
+            // xc's todo: 重复判断？
             if (last_marginalization_info)
             {
                 vector<int> drop_set;
                 for (int i = 0; i < static_cast<int>(last_marginalization_parameter_blocks.size()); i++)
                 {
-                    // 速度零偏只会margin第1个，不可能出现倒数第二个
+                    // 速度零偏只会margin第1个，不可能出现倒数第二个；para_SpeedBias出现在预积分的约束中
                     ROS_ASSERT(last_marginalization_parameter_blocks[i] != para_SpeedBias[WINDOW_SIZE - 1]);
-                    // 这种case只会margin掉倒数第二个位姿
+                    // 这种case只会margin掉倒数第二个位姿，应该可以在找到之后直接break的，最多只会找到1个
                     if (last_marginalization_parameter_blocks[i] == para_Pose[WINDOW_SIZE - 1])
                         drop_set.push_back(i);
                 }

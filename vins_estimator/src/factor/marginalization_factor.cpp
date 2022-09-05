@@ -84,11 +84,15 @@ void ResidualBlockInfo::Evaluate()
         {
             // sq_norm为0没有办法进行else中的操作，不能除0
             // rho[2]<=0是outlier region，直接降低这个residual的权重，降低的幅度是sqrt_rho1_(在outlier的时候，一般小于1)
+
+            // 一般情况下，核函数的二阶导数小于0，因此对于函数及残差都使用同一个缩放因子控制残差的大小
+            // 直观上讲，如果残差很大，使用核函数的一阶导数来缩放残差，使得这个残差不会占据主导地位，进而影响优化的方向；
+            // 而且对于常用的核函数而言，残差越大，一阶导数越小，在理论上就控制了残差
             residual_scaling_ = sqrt_rho1_;
             alpha_sq_norm_ = 0.0;
         }
         else
-        {  // Triggs证明：此种情况下，性能较差
+        {  // Triggs证明：此种情况下，性能较差，收敛较慢
             // inlier region；一般要求rho[1]与rho[2]同正，那么D一定大于1
             const double D = 1.0 + 2.0 * sq_norm * rho[2] / rho[1];
             // 这里的alpha也就是上述网址中的Theory部分的alpha
@@ -140,7 +144,7 @@ void MarginalizationInfo::addResidualBlockInfo(ResidualBlockInfo *residual_block
     factors.emplace_back(residual_block_info);  // 残差块收集起来
 
     std::vector<double *> &parameter_blocks = residual_block_info->parameter_blocks;    // 这个是和该约束相关的参数块
-    std::vector<int> parameter_block_sizes = residual_block_info->cost_function->parameter_block_sizes();   // 各个参数块的大小
+    std::vector<int> parameter_block_sizes = residual_block_info->cost_function->parameter_block_sizes();   // 各个参数块的大小，注意这里是global size
 
     for (int i = 0; i < static_cast<int>(residual_block_info->parameter_blocks.size()); i++)
     {
@@ -166,7 +170,7 @@ void MarginalizationInfo::preMarginalize()
 {
     for (auto it : factors)
     {
-        it->Evaluate(); // 调用这个接口计算各个残差块的残差和雅克比矩阵
+        it->Evaluate(); // 调用这个接口计算各个残差块的残差和雅克比矩阵，并根据设定的核函数对残差和jacobian进行缩放
 
         std::vector<int> block_sizes = it->cost_function->parameter_block_sizes();  // 得到每个残差块的参数块大小
         for (int i = 0; i < static_cast<int>(block_sizes.size()); i++)
@@ -174,7 +178,8 @@ void MarginalizationInfo::preMarginalize()
             long addr = reinterpret_cast<long>(it->parameter_blocks[i]);    // 得到该参数块的地址
             int size = block_sizes[i];  // 参数块大小
             // 把各个参数块都备份起来，使用map避免重复参数块，之所以备份，是为了后面的状态保留
-            if (parameter_block_data.find(addr) == parameter_block_data.end())
+            // 在IMU预积分的残差构建中使用了视觉位姿的参数块，在视觉重投影的残差中依旧使用了视觉位姿的参数块
+            if (parameter_block_data.find(addr) == parameter_block_data.end())  // parameter_block_data中保存了原始的参数块
             {
                 double *data = new double[size];
                 // 深拷贝
@@ -185,11 +190,13 @@ void MarginalizationInfo::preMarginalize()
     }
 }
 
+// 传入的是global size，返回的是local size
 int MarginalizationInfo::localSize(int size) const
 {
     return size == 7 ? 6 : size;
 }
 
+// 传入的是local size，返回的是global size
 int MarginalizationInfo::globalSize(int size) const
 {
     return size == 6 ? 7 : size;
@@ -249,27 +256,40 @@ void* ThreadsConstructA(void* threadsstruct)
  * 
  */
 
+/**
+ * 边缘化一般是伴随着稀疏求解存在的，也就是对Ax = b，且A是一个分块矩阵，其左上角矩阵和右下角矩阵互为转置，对角线上均为对角矩阵；此时一般利用边缘化的策略来求解方程，从而达到降低运算量的目的
+ * 相应的技术还有sherman-morrison-woodbury formula，其可以将一个高维求逆转变为低维求逆
+ *
+ * 在滑窗优化中，由于窗口不停地滑动，当某一帧滑出窗口的时候，并不能简单的就认为这一帧不再对窗口优化起作用，否则，对每一个窗口优化都毫无约束，窗口优化的结果将并不符合预期
+ * 与ORB-SLAM3中类比的话，对局部地图进行优化的时候，会控制局部地图中的地图点的观测（但不在局部地图中的关键帧）的这部分关键帧固定，从而限制局部地图的优化，防止其可以任意偏移和旋转
+ *
+ * 因此，当某一帧滑出窗口后，依然要保留其对窗口内的帧的影响，从这个含义上将，将与解Ax = b的目的不同，但是二者的做法是接近的
+ */
 void MarginalizationInfo::marginalize()
 {
     int pos = 0;
     // parameter_block_idx key是各个待边缘化参数块地址 value预设都是0
     for (auto &it : parameter_block_idx)
     {
+        // 对于待边缘化的参数块而言，第一个的idx为0，第二个待边缘化的idx是第一个待边缘化的参数块的local size，依次递推
         it.second = pos;    // 这就是在所有参数中排序的idx，待边缘化的排在前面
         pos += localSize(parameter_block_size[it.first]);   // 因为要进行求导，因此大小时local size，具体一点就是使用李代数
     }
+    // 到这里，待边缘化的参数块已经遍历结束，后面就开始遍历不需要边缘化的参数块了
 
     m = pos;    // 总共待边缘化的参数块总大小（不是个数）
     // 其他参数块
     for (const auto &it : parameter_block_size)
     {
-        if (parameter_block_idx.find(it.first) == parameter_block_idx.end())
+        // 在addResidualBlockInfo中，parameter_block_idx仅仅保存了待边缘化的参数块，在这里将所有的参数块都添加进去
+        if (parameter_block_idx.find(it.first) == parameter_block_idx.end())  // 不需要边缘化的参数块
         {
             parameter_block_idx[it.first] = pos;    // 这样每个参数块的大小都能被正确找到
             pos += localSize(it.second);
         }
     }
 
+    // n表示不需要边缘化的参数块的总计的size
     n = pos - m;    // 其他参数块的总大小
 
     //ROS_DEBUG("marginalization, pos: %d, m: %d, n: %d, size: %d", pos, m, n, (int)parameter_block_idx.size());
@@ -363,9 +383,8 @@ void MarginalizationInfo::marginalize()
     // 利用特征值取逆来构造其逆矩阵
     // A * P = P * diag()，A.inv = P * diag().inv * P.inv
     /**
-     * 为了说明这样操作的理由，不妨举一个特殊的例子，Amm = diag(a1, a2, ..., an)，ai表示方差，如果ai≠0，那么
-     * J = (e1.t, e2.t, ..., en.t).t，J.t * Amm * J = ∑ei.t * ei / ai
-     * ai等于0，也就是方差为0，也就是没有波动，此时不考虑误差项ei.t * ei，因此直接将1/ai令为0即可
+     * 当存在为0或者接近0的特征值时，说明Amm奇异或者接近奇异，这个时候对Amm求逆是错误或者不稳定的
+     * 详细的原理分析见SLAM14讲边缘化部分的笔记，详细阐述了当特征值为0的时候，可以按照如下的方式计算Amm的逆矩阵，这样做并不会改变问题的解
      */
     Eigen::MatrixXd Amm_inv = saes.eigenvectors() * Eigen::VectorXd((saes.eigenvalues().array() > eps).select(saes.eigenvalues().array().inverse(), 0)).asDiagonal() * saes.eigenvectors().transpose();
     //printf("error1: %f\n", (Amm * Amm_inv - Eigen::MatrixXd::Identity(m, m)).sum());
@@ -386,18 +405,28 @@ void MarginalizationInfo::marginalize()
     /**
      * notes:
      *      1. 上面为了避免浮点数运算导致A变为非对称矩阵，使用了0.5 * (A + A.T)，这里理论上也应该这样操作，否则也不应该使用SelfAdjointEigenSolver接口
+     *      2. 使用SelfAdjointEigenSolver能够加速运算
      */
     Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> saes2(A);
-    // 对A矩阵取逆
+    // 对A矩阵相似对角化后的矩阵求逆
+    /**
+     * A = p * diag * p.t = J.t * J → J = diag^0.5 * p.t
+     * b = -J.t * f(x) → f(x) = -diag^(-0.5) * p.t * b；由于残差一般与2范数一起出现，因此可以舍弃掉负号
+     *
+     * 当A奇异或者接近奇异的时候，求逆是错误的或者是不稳定的；
+     * 有关奇异情形求逆的理论基础见SLAM14讲边缘化部分的笔记，详细阐述了当特征值为0的时候，可以按照如下的方式计算A的逆矩阵，这样做并不会改变问题的解
+     */
     Eigen::VectorXd S = Eigen::VectorXd((saes2.eigenvalues().array() > eps).select(saes2.eigenvalues().array(), 0));
     Eigen::VectorXd S_inv = Eigen::VectorXd((saes2.eigenvalues().array() > eps).select(saes2.eigenvalues().array().inverse(), 0));
 
+    // S = S^0.5 * S^0.5
     Eigen::VectorXd S_sqrt = S.cwiseSqrt(); // 这个求得就是 S^(1/2)，不过这里是向量还不是矩阵
     Eigen::VectorXd S_inv_sqrt = S_inv.cwiseSqrt();
     // 边缘化为了实现对剩下参数块的约束，为了便于一起优化，就抽象成了残差和雅克比的形式，这样也形成了一种残差约束
     /**
-     * notes:
-     *      1. 根据JTJ * x = JT * f(x)，将上面的形式表示为这个形式，就可以计算得到J和f(x)，他们分别是雅克比和残差
+     * 假设参数块的总维度为n，对于维度为2的残差，构成的jacobian为2 * n；对于维度为3的残差，构成的jacobian为3 * n
+     * 但是在边缘化之后，剩余的参数块的维度为m，那么我们得到的jacobian为m * m，残差是m * 1
+     * 注意：这里的jacobian和残差可以认为是虚构的，不是由物理世界实际存在的约束构建的
      */
     linearized_jacobians = S_sqrt.asDiagonal() * saes2.eigenvectors().transpose();
     linearized_residuals = S_inv_sqrt.asDiagonal() * saes2.eigenvectors().transpose() * b;
@@ -468,23 +497,29 @@ bool MarginalizationFactor::Evaluate(double const *const *parameters, double *re
     //printf("residual %x\n", reinterpret_cast<long>(residuals));
     //}
     int n = marginalization_info->n;    // 上一次边缘化保留的残差块的local size的和,也就是残差维数
-    int m = marginalization_info->m;    // 上次边缘化的被margin的残差块总和
+    int m = marginalization_info->m;    // 上次边缘化的被margin的残差块的local size的总和
     Eigen::VectorXd dx(n);  // 用来存储残差
     // 遍历所有的剩下的有约束的残差块
     for (int i = 0; i < static_cast<int>(marginalization_info->keep_block_size.size()); i++)
     {
         int size = marginalization_info->keep_block_size[i];
         int idx = marginalization_info->keep_block_idx[i] - m;  // idx起点统一到0
-        Eigen::VectorXd x = Eigen::Map<const Eigen::VectorXd>(parameters[i], size); // 当前参数块的值
-        Eigen::VectorXd x0 = Eigen::Map<const Eigen::VectorXd>(marginalization_info->keep_block_data[i], size); // 当时参数块的值
+        Eigen::VectorXd x = Eigen::Map<const Eigen::VectorXd>(parameters[i], size); // 当前参数块的值，在优化过程中动态变化
+        Eigen::VectorXd x0 = Eigen::Map<const Eigen::VectorXd>(marginalization_info->keep_block_data[i], size); // 原始参数块的值
         if (size != 7)
             dx.segment(idx, size) = x - x0; // 不需要local param的直接做差
         else    // 代表位姿的param
         {
             dx.segment<3>(idx + 0) = x.head<3>() - x0.head<3>();    // 位移直接做差
-            // 旋转就是李代数做差
+            // 旋转就是李代数做差：q' = q * delta_q → delta_q = q.inv * q'，其中q'对应着x，是一个优化过程中的动态值，q对应着x0
             dx.segment<3>(idx + 3) = 2.0 * Utility::positify(Eigen::Quaterniond(x0(6), x0(3), x0(4), x0(5)).inverse() * Eigen::Quaterniond(x(6), x(3), x(4), x(5))).vec();
-            // 确保实部大于0
+            /**
+             * 确保实部大于0：优化过程都是小步迭代，因此相对旋转对应的轴角很小，因此cos(theta/2)接近1
+             *
+             * q1 = (s, v).t, q2 = (-1, 0).t, q3 = (-s, -v).t，q1与q3实际上表示同一个旋转
+             * q1 * q2 = q3, q1.inv * q1 = (1, 0).t, q1.inv * q3 = q2，尽管q1与q3表示同一个旋转，但是q1.inv * q3并不是单位四元数
+             * 以下操作是为了避免出现(-1, 0).t的情形
+             */
             if (!((Eigen::Quaterniond(x0(6), x0(3), x0(4), x0(5)).inverse() * Eigen::Quaterniond(x(6), x(3), x(4), x(5))).w() >= 0))
             {
                 dx.segment<3>(idx + 3) = 2.0 * -Utility::positify(Eigen::Quaterniond(x0(6), x0(3), x0(4), x0(5)).inverse() * Eigen::Quaterniond(x(6), x(3), x(4), x(5))).vec();
@@ -495,14 +530,26 @@ bool MarginalizationFactor::Evaluate(double const *const *parameters, double *re
     // 个人理解：根据FEJ．雅克比保持不变，但是残差随着优化会变化，因此下面不更新雅克比　只更新残差
     // 关于FEJ的理解可以参考 https://www.zhihu.com/question/52869487
     // 可以参考　https://blog.csdn.net/weixin_41394379/article/details/89975386
+#if 0
+    std::cout << "linearized_residuals.size = " << marginalization_info->linearized_residuals.size() << std::endl;
+    std::cout << "linearized_jacobians.size = " << marginalization_info->linearized_jacobians.size() << std::endl;
+    std::cout << "marginalization_info->linearized_jacobians * dx = " << marginalization_info->linearized_jacobians * dx << std::endl;
+#endif
+#if 1
+    std::cout << "m = " << m << ", n = " << n << std::endl;
+#endif
+
+    /**
+     * 保持jacobian不变，仅仅根据状态量的变动更新残差，也就是说，预积分形成的约束(残差)只会在构成边缘化的时候计算得到的状态量处展开，之后将不会再发生变化，这个就是first estimate jacobian理论
+     */
     Eigen::Map<Eigen::VectorXd>(residuals, n) = marginalization_info->linearized_residuals + marginalization_info->linearized_jacobians * dx;
     if (jacobians)
     {
-
         for (int i = 0; i < static_cast<int>(marginalization_info->keep_block_size.size()); i++)
         {
             if (jacobians[i])
             {
+                // 将整个大的jacobian即marginalization_info->linearized_jacobians分配给每一个参数块
                 int size = marginalization_info->keep_block_size[i], local_size = marginalization_info->localSize(size);
                 int idx = marginalization_info->keep_block_idx[i] - m;
                 Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> jacobian(jacobians[i], n, size);
