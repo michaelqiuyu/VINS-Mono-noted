@@ -493,6 +493,8 @@ git:
 	git reset --hard origin/master
 	git pull
 
+	git push -f origin master
+
 
 
 

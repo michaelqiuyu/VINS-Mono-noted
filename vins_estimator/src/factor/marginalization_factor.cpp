@@ -535,12 +535,30 @@ bool MarginalizationFactor::Evaluate(double const *const *parameters, double *re
     std::cout << "linearized_jacobians.size = " << marginalization_info->linearized_jacobians.size() << std::endl;
     std::cout << "marginalization_info->linearized_jacobians * dx = " << marginalization_info->linearized_jacobians * dx << std::endl;
 #endif
-#if 1
+#if 0
     std::cout << "m = " << m << ", n = " << n << std::endl;
 #endif
 
     /**
-     * 保持jacobian不变，仅仅根据状态量的变动更新残差，也就是说，预积分形成的约束(残差)只会在构成边缘化的时候计算得到的状态量处展开，之后将不会再发生变化，这个就是first estimate jacobian理论
+     * 保持jacobian不变，仅仅根据状态量的变动更新残差，也就是说，预积分形成的约束(残差)只会在构成边缘化的时候计算得到的状态量处展开，之后将不会再发生变化
+     *
+     * 需要注意的是，在这里仅仅保持了边缘化形成的约束对相关状态量的first estimate jacobian，但是这些状态量还可能形成IMU预积分约束和视觉重投影约束，而在这些约束中并没有固定住jacobian
+     * 因此，vins-mono实际上并没有严格执行FEJ，对边缘化形成的约束执行FEJ，对其余的约束不做特殊处理；从结果上看，不用FEJ也可以运行的很好
+     *
+     * 在https://heyijia.blog.csdn.net/article/details/52822104?spm=1001.2014.3001.5502中，engel提供的图像说明，在不同的点处展开，可能会引入人为的伪信息，导致不可观测的状态变的可以观测了
+     *
+     * 在高翔博士的博客https://zhuanlan.zhihu.com/p/29177540中对零空间和FEJ的描述：
+     *          在SLAM中，GN或LM优化过程中，状态变量事实上是存在零空间（nullspace）的。所谓零空间，就是说，如果在这个子空间内改变状态变量的值，不会影响到优化的目标函数取值。
+     *      在纯视觉SLAM中，典型的零空间就是场景的绝对尺度，以及相机的绝对位姿。可以想象，如果将相机和地图同时扩大一个尺度，或者同时作一次旋转和平移，整个目标函数应该不发生改变。
+     *      零空间的存在也会导致在优化过程中，线性方程的解不唯一。尽管每次迭代的步长都很小，但是时间长了，也容易让整个系统在这个零空间中游荡，令尺度发生漂移。
+     *          另一方面，由于边缘化的存在，如果一个点被边缘化，那它的雅可比等矩阵就要被固定于被边缘化之时刻，而其他点的雅可比还会随着时间更新，就使得整个系统中不同变量被线性化的时刻是不同的。
+     *      这会导致零空间的降维——本应存在的零空间，由于线性化时刻的不同，反而消失了！而我们的估计也会变得过于乐观。
+     *          实际上，优化问题会归结到Hx = b的求解上，如果H有零空间，那么x的变化将不会影响系统的残差，也就是对系统不会有影响，举例来说就是单目视觉的尺度；如果Hy = 0，那么x = x + y不会改变系统
+     *
+     * 残差更新方式：状态量x的变化引起b的变化，b的变化引起e的变化
+     *      b = J.t * e → b' = b + Jb_x * dx
+     *      Jb_x = Jb_e * Je_x = J.t * J, b' = J.t * e', b = J.t * e
+     *      J.t * e' = J.t * e + J.t * J * dx → e' = e + J * dx
      */
     Eigen::Map<Eigen::VectorXd>(residuals, n) = marginalization_info->linearized_residuals + marginalization_info->linearized_jacobians * dx;
     if (jacobians)
