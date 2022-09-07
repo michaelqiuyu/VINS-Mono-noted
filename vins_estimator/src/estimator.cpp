@@ -887,6 +887,30 @@ void Estimator::vector2double()  // 赋初值
  */
 void Estimator::double2vector()
 {
+    /**
+     * 以下阐述yaw角的波动和平移的增减对系统没有影响，也就是损失函数不发生变化
+     *
+     * 对于视觉重投影的残差有：e = pcj / pcj(2) - obs
+     *                     pcj = Rbc.t * (Rwbj.t * (Rwbi * (Rbc * pci / λ + tbc) + twbi) - Rwbj.t * twbj) - Rbc.t * tbc
+     *      如果对于R，P(这里实际上对应twbi和twbj)都右乘一个delta_R，那么残差e不会发生改变；如果对于P增减一个delta_P，残差e也不会发生改变
+     *      其实就是说，整个视觉系统可以整体旋转和平移，系统自身的残差不会发生变化
+     *
+     * 对于IMU预积分的残差有：
+     *      1. e1 = log(Ri.t * Rj)
+     *      2. e2 = Ri.t * (Vj - Vi + gw * delta_t)
+     *      3. e3 = Ri.t * (Pj - Pi - Vi * delta_t + 0.5 * gw * delta_t^2)
+     *
+     *      如果对于R，P，V都右乘一个R(delta_yaw)，那么残差e1、e2和e3都不会发生改变；如果对于P增减一个delta_P，残差e1、e2和e3也都不会发生改变
+     *      对于e1，上面的阐述很容易理解，对于e2和e3，只要证明R(-delta_yaw) * gw = gw即可，而实际上这是成立的
+     *
+     * 综合上面的论述，对于R，P，V右乘一个R(delta_yaw)，系统的残差不会发生任何变化；对于P增减一个delta_P，系统的残差也不会发生变化；
+     * 但是为了系统的平滑性，我们补偿窗口中的关键帧yaw角并且平移其位置，从而得到平滑的轨迹
+     *
+     * 在视觉惯性系统中，不可观测的自由度为4，由于重力的存在，使得pitch和roll变的可以观测了
+     *
+     * https://github.com/HKUST-Aerial-Robotics/VINS-Mono/issues/18
+     */
+
     // 取出优化前的第一帧的位姿
     // 初始化之前，其yaw角为0，这也可以从视觉惯性对齐中获取世界系的逻辑中得知；初始化之后，窗口的第一帧不再是系统的第一帧了，因此yaw不为0
     Vector3d origin_R0 = Utility::R2ypr(Rs[0]);
@@ -916,6 +940,10 @@ void Estimator::double2vector()
                                                       para_Pose[0][5]).toRotationMatrix());
     // yaw角差
     double y_diff = origin_R0.x() - origin_R00.x();
+#if 0
+    std::cout << "origin: x = " << origin_R00.x() << ", y = " << origin_R00.y() << ", z = " << origin_R00.z() << std::endl;
+    std::cout << "opt: x = " << origin_R0.x() << ", y = " << origin_R0.y() << ", z = " << origin_R0.z() << std::endl;
+#endif
     /**
      * Rs[0] = Ry2Rp2Rr2, Ropt = Ry1Rp1Rr1
      * y_diff = y2 - y1
@@ -1116,6 +1144,13 @@ void Estimator::optimization()
     vector2double();  // 给予优化的初值
     // Step 2 通过残差约束来添加残差块，类似g2o的边
     // 上一次的边缘化结果作为这一次的先验
+    /**
+     * 1. 实际上，当我们将边缘化的约束注释掉的时候，优化前后的R变动非常小，这个也是非常容易理解的，每次滑窗去除最老帧，加入最新帧，整体优化幅度其实很小（系统变化很小）
+     *
+     * 2. 但是当我们加入边缘化的约束后，yaw角的波动变大，pitch和roll的波动依然很小；这是由于边缘化的约束添加后，系统的优化幅度会大幅增加（系统变动比较大，需要大幅波动才能再次稳定），
+     * 而yaw角的波动不会影响到系统的残差，因此在yaw角上的优化幅度会非常大，反之，由于pitch和roll相比于yaw会显著影响到系统的残差，而且当前值已经使得窗口中的约束近似局部最优（也就是1中所说的优化前后变动很小），
+     * 而边缘化的约束也不会大幅波动pitch和roll，因此pitch和roll的波动相比于yaw而言，小了非常多
+     */
     if (last_marginalization_info)
     {
         // construct new marginlization_factor
