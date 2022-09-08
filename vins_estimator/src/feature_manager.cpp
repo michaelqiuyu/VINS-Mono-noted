@@ -223,7 +223,7 @@ void FeatureManager::removeFailures()
          it != feature.end(); it = it_next)
     {
         it_next++;
-        if (it->solve_flag == 2)
+        if (it->solve_flag == 2)  // 已经求解深度并且深度值为负数
             feature.erase(it);
     }
 }

@@ -244,7 +244,7 @@ void* ThreadsConstructA(void* threadsstruct)
                 }
             }
             // 然后构建g矩阵
-            // ? : 为什么不是-JTb
+            // xc's todo: 为什么不是-J.t * e：这里没有加负号，所以后面构建残差e的时候也没有加负号；代码最好不要这样写，比较迷惑
             p->b.segment(idx_i, size_i) += jacobian_i.transpose() * it->residuals;
         }
     }
@@ -395,8 +395,14 @@ void MarginalizationInfo::marginalize()
 
     Eigen::MatrixXd Arr = A.block(m, m, n, n);
     Eigen::VectorXd brr = b.segment(m, n); // 剩下的参数
+#if 0
+    std::cout << "b.row = " << b.rows() << ", b.col = " << b.cols() << std::endl;
+#endif
     A = Arr - Arm * Amm_inv * Amr;
-    b = brr - Arm * Amm_inv * bmm;
+    b = brr - Arm * Amm_inv * bmm;  // b的维度发生了变化
+#if 0
+    std::cout << "b.row = " << b.rows() << ", b.col = " << b.cols() << std::endl;
+#endif
 
     // 这个地方根据Ax = b => JT*J = - JT * e
     // 对A做特征值分解 A = V * S * VT,其中Ｓ是特征值构成的对角矩阵
@@ -411,7 +417,7 @@ void MarginalizationInfo::marginalize()
     // 对A矩阵相似对角化后的矩阵求逆
     /**
      * A = p * diag * p.t = J.t * J → J = diag^0.5 * p.t
-     * b = -J.t * f(x) → f(x) = -diag^(-0.5) * p.t * b；由于残差一般与2范数一起出现，因此可以舍弃掉负号
+     * b = -J.t * f(x) → f(x) = -diag^(-0.5) * p.t * b；需要注意的是，前面构建b矩阵的时候省略了负号，因此这里也必须省略；最好不要这样写代码，逻辑耦合的比较强烈
      *
      * 当A奇异或者接近奇异的时候，求逆是错误的或者是不稳定的；
      * 有关奇异情形求逆的理论基础见SLAM14讲边缘化部分的笔记，详细阐述了当特征值为0的时候，可以按照如下的方式计算A的逆矩阵，这样做并不会改变问题的解

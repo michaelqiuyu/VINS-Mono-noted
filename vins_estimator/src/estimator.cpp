@@ -903,6 +903,10 @@ void Estimator::double2vector()
      *      如果对于R，P，V都右乘一个R(delta_yaw)，那么残差e1、e2和e3都不会发生改变；如果对于P增减一个delta_P，残差e1、e2和e3也都不会发生改变
      *      对于e1，上面的阐述很容易理解，对于e2和e3，只要证明R(-delta_yaw) * gw = gw即可，而实际上这是成立的
      *
+     * 对于预积分的残差有：
+     *      预积分的残差实际上来源于视觉重投影残差和IMU预积分的残差，不可能经过边缘化后改变系统的不可观测性，毕竟此时没有引入任何其他传感器，而仅仅做了一些数学上的计算
+     *      因此，此时系统的不可观测状态量仍然是4个---yaw, x, y, z，改变这4个状态量，残差不会发生改变
+     *
      * 综合上面的论述，对于R，P，V右乘一个R(delta_yaw)，系统的残差不会发生任何变化；对于P增减一个delta_P，系统的残差也不会发生变化；
      * 但是为了系统的平滑性，我们补偿窗口中的关键帧yaw角并且平移其位置，从而得到平滑的轨迹
      *
@@ -927,7 +931,7 @@ void Estimator::double2vector()
      */
     // xc's todo: 窗口第一帧的yaw角和位移为什么不应该更新？
 
-    if (failure_occur)  // 初始值为false
+    if (failure_occur)  // 初始值为false，如果failureDetection检测到失败，就会变成true
     {
         origin_R0 = Utility::R2ypr(last_R0);
         origin_P0 = last_P0;
@@ -1045,17 +1049,17 @@ void Estimator::double2vector()
 
 bool Estimator::failureDetection()
 {
-    if (f_manager.last_track_num < 2)   // 地图点数目是否足够
+    if (f_manager.last_track_num < 2)   // 跟踪上一帧的地图点的数目
     {
         ROS_INFO(" little feature %d", f_manager.last_track_num);
-        //return true;
+        //return true;  // 注意没有返回true，有可能矫正回来
     }
-    if (Bas[WINDOW_SIZE].norm() > 2.5)  // 零偏是否正常
+    if (Bas[WINDOW_SIZE].norm() > 2.5)  // 加速度零偏是否正常
     {
         ROS_INFO(" big IMU acc bias estimation %f", Bas[WINDOW_SIZE].norm());
         return true;
     }
-    if (Bgs[WINDOW_SIZE].norm() > 1.0)
+    if (Bgs[WINDOW_SIZE].norm() > 1.0)  // 陀螺仪零偏是否正常
     {
         ROS_INFO(" big IMU gyr bias estimation %f", Bgs[WINDOW_SIZE].norm());
         return true;
@@ -1073,7 +1077,7 @@ bool Estimator::failureDetection()
         ROS_INFO(" big translation");
         return true;
     }
-    if (abs(tmp_P.z() - last_P.z()) > 1)    // 重力方向运动是否过大
+    if (abs(tmp_P.z() - last_P.z()) > 1)    // 重力方向运动是否过大，通常情况下不会发生
     {
         ROS_INFO(" big z translation");
         return true; 
@@ -1082,11 +1086,11 @@ bool Estimator::failureDetection()
     Matrix3d delta_R = tmp_R.transpose() * last_R;
     Quaterniond delta_Q(delta_R);
     double delta_angle;
-    delta_angle = acos(delta_Q.w()) * 2.0 / 3.14 * 180.0;
+    delta_angle = acos(delta_Q.w()) * 2.0 / 3.14 * 180.0;  // 使用的是相对旋转对应的轴角来判断
     if (delta_angle > 50)   // 两帧姿态变化是否过大
     {
         ROS_INFO(" big delta_angle ");
-        //return true;
+        //return true;  // 注意没有返回true，有可能矫正回来
     }
     return false;
 }
@@ -1108,6 +1112,7 @@ void Estimator::optimization()
     ceres::Problem problem;
     ceres::LossFunction *loss_function;
     //loss_function = new ceres::HuberLoss(1.0);
+    // Cauchy: ρ(s) = log(1 + s)   →   ρ'(s) = (1 + s)^(-1)   →   ρ''(s) = -(1 + s)^(-2)
     loss_function = new ceres::CauchyLoss(1.0);
     // Step 1 定义待优化的参数块，类似g2o的顶点
     // 参数块 1： 滑窗中位姿包括位置和姿态，共11帧

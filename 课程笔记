@@ -372,7 +372,12 @@
 							2.2 如果solver_flag等于non_linear，那么：
 								2.2.1 对特征点管理器中的特征点执行多帧三角化求解深度
 								2.2.2 执行optimization：
-									1. 
+									1. 使用ceres构建优化问题，使用柯西核函数
+									2. 添加位姿参数块、速度和偏置参数块、相机与IMU外参参数块、时间补偿参数块；
+									3. vector2double：给参数块附上初始值
+									4. 添加边缘化的约束、IMU预积分的约束、视觉重投影的约束、回环的约束
+									5. 使用ceres进行求解，并将参数块对应的状态量更新(double2vector)
+									6. 执行边缘化的操作，构建边缘化后的雅克比和残差
 
 						3. slideWindow
 							3.1 如果marginalization_flag为margin_old：
@@ -403,8 +408,7 @@
 									2. 遍历所有的特征点，如果这个特征点的起始观测是frame_count，那么直接将起始帧观测递减即可，否则
 									3. 判断特征点能够被移除的倒数第二帧（也就是frame_count-1对应的那一帧，并非像slideWindowOld一样，真的被删除了，而是与frame_count对应的那一帧合并了）看到，如果不能就什么也不做，否则，首先移除倒数第二帧的观测，然后判断这个特征点还有没有观测，没有的话就将这个特征点也删除
 
-						4. 移除无效的地图点f_manager.removeFailures：
-							4.1 
+						4. 移除无效的地图点f_manager.removeFailures：遍历特征点管理器，将已经求解了深度，并且深度值为负的特征点从特征点管理器中删除
 
 						5. 存储滑窗里面最新的位姿到last_R和last_P中，存储滑窗中最老的位姿到last_R0和last_P0中
 
@@ -415,11 +419,12 @@
 
 					3.7.2 检测VIO是否正常failureDetection；如果检测到不正常：
 						1. failure_occur设置为1
-						2. clearState：
-							2.1 
-						3. setParameter：
-							3.1 
+						2. clearState：所有状态重置
+						3. setParameter：外参重置，时延重置，设定重投影误差的阈值
 						4. 直接结束
+						5. failureDetection：
+							5.1 判断跟踪的稳定性、加速度零偏和陀螺仪零偏的大小、最后两帧之间相对旋转的变动
+							5.2 如果变化剧烈，就认为
 
 					3.7.3 求解滑窗slideWindow
 
