@@ -490,11 +490,17 @@ int main(int argc, char **argv)
     ros::NodeHandle n("~");
     posegraph.registerPub(n);
 
-    // read param
+    // read param：使用的都是默认参数，为0
     n.getParam("visualization_shift_x", VISUALIZATION_SHIFT_X); // 这两个shift基本都是0
     n.getParam("visualization_shift_y", VISUALIZATION_SHIFT_Y);
     n.getParam("skip_cnt", SKIP_CNT);   // 跳过前SKIP_CNT帧
     n.getParam("skip_dis", SKIP_DIS);   // 两帧距离门限
+#if 0
+    std::cout << "VISUALIZATION_SHIFT_X = " << VISUALIZATION_SHIFT_X << std::endl;
+    std::cout << "VISUALIZATION_SHIFT_Y = " << VISUALIZATION_SHIFT_Y << std::endl;
+    std::cout << "SKIP_CNT = " << SKIP_CNT << std::endl;
+    std::cout << "SKIP_DIS = " << SKIP_DIS << std::endl;
+#endif
     std::string config_file;
     n.getParam("config_file", config_file);
     cv::FileStorage fsSettings(config_file, cv::FileStorage::READ);
@@ -515,7 +521,7 @@ int main(int argc, char **argv)
     {
         ROW = fsSettings["image_height"];   // 图片分辨率
         COL = fsSettings["image_width"];
-        std::string pkg_path = ros::package::getPath("pose_graph");
+        std::string pkg_path = ros::package::getPath("pose_graph");  // 获取文件夹pose_graph的路径
         string vocabulary_file = pkg_path + "/../support_files/brief_k10L6.bin";    // 训练好的二进制词袋的路径
         cout << "vocabulary_file" << vocabulary_file << endl;
         posegraph.loadVocabulary(vocabulary_file);  // 加载二进制词袋

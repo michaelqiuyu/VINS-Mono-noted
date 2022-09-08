@@ -887,6 +887,7 @@ void Estimator::vector2double()  // 赋初值
  */
 void Estimator::double2vector()
 {
+    // xc's todo: 窗口第一帧的yaw角和位移为什么不应该更新？
     /**
      * 以下阐述yaw角的波动和平移的增减对系统没有影响，也就是损失函数不发生变化
      *
@@ -929,7 +930,6 @@ void Estimator::double2vector()
      *
      * 值得注意的是，即使在初始化之前，也没有固定住某一帧的位姿，也就是说位姿可以任意漂移和旋转；然后再通过yaw角补偿变换一下
      */
-    // xc's todo: 窗口第一帧的yaw角和位移为什么不应该更新？
 
     if (failure_occur)  // 初始值为false，如果failureDetection检测到失败，就会变成true
     {
