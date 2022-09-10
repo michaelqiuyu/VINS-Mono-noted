@@ -167,8 +167,7 @@ void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
     path[sequence_cnt].poses.push_back(pose_stamped);
     path[sequence_cnt].header = pose_stamped.header;
 
-    if (SAVE_LOOP_PATH)
-    {
+    if (SAVE_LOOP_PATH) {
         ofstream loop_path_file(VINS_RESULT_PATH, ios::app);
         loop_path_file.setf(ios::fixed, ios::floatfield);
         loop_path_file.precision(0);
