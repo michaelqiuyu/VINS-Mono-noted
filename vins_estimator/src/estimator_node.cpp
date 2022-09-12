@@ -272,6 +272,7 @@ void restart_callback(const std_msgs::BoolConstPtr &restart_msg)
     return;
 }
 
+// 将当前关键帧的闭环关键帧的结果保存到relo_buf之中
 void relocalization_callback(const sensor_msgs::PointCloudConstPtr &points_msg)
 {
     //printf("relocalization callback! \n");
@@ -357,7 +358,7 @@ void process()
             // set relocalization frame
             // 回环相关部分
             sensor_msgs::PointCloudConstPtr relo_msg = NULL;
-            while (!relo_buf.empty())   // 取出最新的回环帧
+            while (!relo_buf.empty())   // 取出最新的回环帧，并不会都处理，性能有限
             {
                 relo_msg = relo_buf.front();
                 relo_buf.pop();
@@ -365,13 +366,15 @@ void process()
             if (relo_msg != NULL)   // 有效回环信息
             {
                 vector<Vector3d> match_points;
-                double frame_stamp = relo_msg->header.stamp.toSec();    // 回环的当前帧时间戳
+                double frame_stamp = relo_msg->header.stamp.toSec();    // 闭环关键帧对应的当前关键帧的时间戳
+                // 闭环关键帧与其当前关键帧的匹配点，特征点是闭环关键帧的
                 for (unsigned int i = 0; i < relo_msg->points.size(); i++)
                 {
                     Vector3d u_v_id;
-                    u_v_id.x() = relo_msg->points[i].x; // 回环帧的归一化坐标和地图点idx
+                    // 回环帧的归一化坐标和地图点idx
+                    u_v_id.x() = relo_msg->points[i].x;
                     u_v_id.y() = relo_msg->points[i].y;
-                    u_v_id.z() = relo_msg->points[i].z;
+                    u_v_id.z() = relo_msg->points[i].z;  // 注意这里是特征点的id，不是1
                     match_points.push_back(u_v_id);
                 }
                 // 回环帧的位姿
@@ -379,7 +382,7 @@ void process()
                 Quaterniond relo_q(relo_msg->channels[0].values[3], relo_msg->channels[0].values[4], relo_msg->channels[0].values[5], relo_msg->channels[0].values[6]);
                 Matrix3d relo_r = relo_q.toRotationMatrix();
                 int frame_index;
-                frame_index = relo_msg->channels[0].values[7];
+                frame_index = relo_msg->channels[0].values[7];  // 获取闭环的当前关键帧的索引
                 estimator.setReloFrame(frame_stamp, frame_index, match_points, relo_t, relo_r);
             }
 
@@ -425,7 +428,7 @@ void process()
             pubPointCloud(estimator, header);
             pubTF(estimator, header);
             pubKeyframe(estimator);
-            if (relo_msg != NULL)
+            if (relo_msg != NULL)  // 将重定位的结果publish出去
                 pubRelocalization(estimator);
             //ROS_ERROR("end: %f, at %f", img_msg->header.stamp.toSec(), ros::Time::now().toSec());
         }
@@ -459,7 +462,7 @@ int main(int argc, char **argv)
     ros::Subscriber sub_image = n.subscribe("/feature_tracker/feature", 2000, feature_callback);
     // 接受前端重启命令
     ros::Subscriber sub_restart = n.subscribe("/feature_tracker/restart", 2000, restart_callback);
-    // 回环检测的fast relocalization响应
+    // 回环检测的fast relocalization响应，数据来源于对当前关键帧搜索到的闭环关键帧的地图点及其位姿
     ros::Subscriber sub_relo_points = n.subscribe("/pose_graph/match_points", 2000, relocalization_callback);
 
     // 核心处理线程

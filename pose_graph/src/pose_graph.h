@@ -49,7 +49,7 @@ public:
 	void savePoseGraph();
 	void loadPoseGraph();
 	void publish();
-	//	VIO位姿和全局位姿的位姿差
+	//	VIO位姿和全局位姿的位姿差：表示从有漂移的位姿变换到没有漂移的位姿的变换矩阵-shift_r和shift_t
 	Vector3d t_drift;
 	double yaw_drift;
 	Matrix3d r_drift;
@@ -97,13 +97,14 @@ T NormalizeAngle(const T& angle_degrees) {
   	return angle_degrees;
 };
 
-// 将增量叠加后的角度约束至（-180, 180）之间
+// 将增量叠加后的角度约束至（-180, 180）之间，注意这里并没有继承ceres的LocalParameterization类
 class AngleLocalParameterization {
  public:
 
   template <typename T>
   bool operator()(const T* theta_radians, const T* delta_theta_radians,
                   T* theta_radians_plus_delta) const {
+      // 定义一个加法
     *theta_radians_plus_delta =
         NormalizeAngle(*theta_radians + *delta_theta_radians);
 
@@ -111,6 +112,7 @@ class AngleLocalParameterization {
   }
 
   static ceres::LocalParameterization* Create() {
+      // 采用自动求导的方式，注意这里的自由度是1，也就是仅仅只是一个角度
     return (new ceres::AutoDiffLocalParameterization<AngleLocalParameterization,
                                                      1, 1>);
   }
@@ -161,12 +163,12 @@ void RotationMatrixRotatePoint(const T R[9], const T t[3], T r_t[3])
 // 使用ceres自动求导，只需要重载（）运算符，用来计算残差即可
 struct FourDOFError
 {
-	// 构造函数传入两帧之间的相对位姿差
+    // 传入的是两个关键帧的相对平移、位姿的yaw角度的差值、i帧的pitch和roll
 	FourDOFError(double t_x, double t_y, double t_z, double relative_yaw, double pitch_i, double roll_i)
 				  :t_x(t_x), t_y(t_y), t_z(t_z), relative_yaw(relative_yaw), pitch_i(pitch_i), roll_i(roll_i){}
 
 	template <typename T>
-	// 用来约束i帧的平移和yaw以及j帧的平移和yaw
+	// 用来约束i帧的平移和yaw以及j帧的平移和yaw；注意这里的yaw_i和yaw_j都是3维数组，并不是一个数
 	bool operator()(const T* const yaw_i, const T* ti, const T* yaw_j, const T* tj, T* residuals) const
 	{
 		T t_w_ij[3];
@@ -199,7 +201,7 @@ struct FourDOFError
 									   const double relative_yaw, const double pitch_i, const double roll_i) 
 	{
 	  return (new ceres::AutoDiffCostFunction<
-	          FourDOFError, 4, 1, 3, 1, 3>(
+	          FourDOFError, 4, 1, 3, 1, 3>(  // 虽然我们传入的yaw是3维的，但是实际上我们只是使用了第一个维度
 	          	new FourDOFError(t_x, t_y, t_z, relative_yaw, pitch_i, roll_i)));
 	}
 

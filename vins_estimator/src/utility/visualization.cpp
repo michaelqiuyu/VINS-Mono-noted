@@ -417,9 +417,9 @@ void pubKeyframe(const Estimator &estimator)
 void pubRelocalization(const Estimator &estimator)
 {
     nav_msgs::Odometry odometry;
-    odometry.header.stamp = ros::Time(estimator.relo_frame_stamp);
+    odometry.header.stamp = ros::Time(estimator.relo_frame_stamp);  // 闭环关键帧对应的当前关键帧的时间戳
     odometry.header.frame_id = "world";
-    // 优化后的回环帧位姿
+    // 当前关键帧到回环关键帧的相对位姿，注意回环关键帧的位姿的计算是利用当前关键帧的地图点，实际上是一个漂移的位姿
     odometry.pose.pose.position.x = estimator.relo_relative_t.x();
     odometry.pose.pose.position.y = estimator.relo_relative_t.y();
     odometry.pose.pose.position.z = estimator.relo_relative_t.z();
@@ -427,9 +427,9 @@ void pubRelocalization(const Estimator &estimator)
     odometry.pose.pose.orientation.y = estimator.relo_relative_q.y();
     odometry.pose.pose.orientation.z = estimator.relo_relative_q.z();
     odometry.pose.pose.orientation.w = estimator.relo_relative_q.w();
-    // 回环帧的yaw
+    // 当前关键帧的旋转对应的yaw减去闭环关键帧的旋转对应的yaw
     odometry.twist.twist.linear.x = estimator.relo_relative_yaw;
-    // 回环帧对应的当前帧在回环节点中的idx
+    // 获取闭环的当前关键帧的索引
     odometry.twist.twist.linear.y = estimator.relo_frame_index;
 
     pub_relo_relative_pose.publish(odometry);

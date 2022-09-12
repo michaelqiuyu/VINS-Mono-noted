@@ -890,12 +890,12 @@ void Estimator::double2vector()
     // xc's todo: 窗口第一帧的yaw角和位移为什么不应该更新？
     /**
      * 以下阐述yaw角的波动和平移的增减对系统没有影响，也就是损失函数不发生变化
-     *
+     * 
      * 对于视觉重投影的残差有：e = pcj / pcj(2) - obs
      *                     pcj = Rbc.t * (Rwbj.t * (Rwbi * (Rbc * pci / λ + tbc) + twbi) - Rwbj.t * twbj) - Rbc.t * tbc
      *      如果对于R，P(这里实际上对应twbi和twbj)都右乘一个delta_R，那么残差e不会发生改变；如果对于P增减一个delta_P，残差e也不会发生改变
      *      其实就是说，整个视觉系统可以整体旋转和平移，系统自身的残差不会发生变化
-     *
+     * 
      * 对于IMU预积分的残差有：
      *      1. e1 = log(Ri.t * Rj)
      *      2. e2 = Ri.t * (Vj - Vi + gw * delta_t)
@@ -904,14 +904,20 @@ void Estimator::double2vector()
      *      如果对于R，P，V都右乘一个R(delta_yaw)，那么残差e1、e2和e3都不会发生改变；如果对于P增减一个delta_P，残差e1、e2和e3也都不会发生改变
      *      对于e1，上面的阐述很容易理解，对于e2和e3，只要证明R(-delta_yaw) * gw = gw即可，而实际上这是成立的
      *
-     * 对于预积分的残差有：
-     *      预积分的残差实际上来源于视觉重投影残差和IMU预积分的残差，不可能经过边缘化后改变系统的不可观测性，毕竟此时没有引入任何其他传感器，而仅仅做了一些数学上的计算
-     *      因此，此时系统的不可观测状态量仍然是4个---yaw, x, y, z，改变这4个状态量，残差不会发生改变
+     * 对于边缘化的残差有：边缘化的残差实际上来源于视觉重投影残差和IMU预积分的残差；注意这里的边缘化的残差和jacobian并没有严格的按照FEJ来推导
+     *      边缘化的目的实际上就是为了限制窗口中关键帧yaw和position的任意变动，比如在ORB-SLAM中限定第一帧不动，也就是将不可观的pose变的可观了（提供了一个世界系）；
+     *      如果我们按照严格的FEJ来推导残差及其雅克比，那么理论上这里并不需要进行补偿；然而由于没有按照严格的FEJ，不可观的yaw和position依旧未知，
+     *      并且由于变量在边缘化约束中按照FEJ的方式计算jacobian，而在视觉重投影误差和IMU预积分误差中没有按照FEJ的方式计算jacobian，因此yaw会发生
+     *      较大的变动（添加边缘化约束与不添加边缘化约束相比，不添加边缘化的约束很快就收敛了，状态量没有较大的变化）
      *
-     * 综合上面的论述，对于R，P，V右乘一个R(delta_yaw)，系统的残差不会发生任何变化；对于P增减一个delta_P，系统的残差也不会发生变化；
-     * 但是为了系统的平滑性，我们补偿窗口中的关键帧yaw角并且平移其位置，从而得到平滑的轨迹
+     * 这里可以这样理解：边缘化的残差本来是用来约束不可观的yaw和position的（当然也会对pitch和roll产生约束），但由于没有严格按照FEJ，导致我们实际上没有限制住yaw和position，只能将其补偿回优化前的状态，
+     * 以此来保证轨迹的连续性，这只是一种折中的方式，这种方式也就意味着窗口第一帧的yaw和position是不变的，这也是不是很准确的；
+     * 所以，实际上，这里的边缘化的约束实际上只是约束了pitch和roll，对yaw和position的约束会被补偿回去
+     * 
+     * 如果不添加边缘化的约束，整个系统有4自由度不可观，并且也会丧失窗口外的观测对窗口内的状态的约束，这样做是不可取的；由于采用的是迭代优化，因此，
+     * 实际上，不添加边缘化的约束的话，系统是比较快的就收敛了，并且各个状态量的变动比较小，当然，这也取决于状态量的初值
      *
-     * 在视觉惯性系统中，不可观测的自由度为4，由于重力的存在，使得pitch和roll变的可以观测了
+     * 在视觉惯性系统中，不可观测的自由度为4，由于重力的存在，使得pitch和roll变的可以观测了；系统的不可观测状态量是4个---yaw, x, y, z，改变这4个状态量，残差不会发生改变
      *
      * https://github.com/HKUST-Aerial-Robotics/VINS-Mono/issues/18
      */
@@ -999,11 +1005,8 @@ void Estimator::double2vector()
     std::cout << "优化更新前第一帧的平移为：" << Ps[0].transpose() << std::endl;
 #endif
     // notes: 经过测试后，优化更新前后的第一帧的yaw是一样的，优化更新前后的第一帧的位移是一样的，这与理论是一样的；
-
-    // xc's todo: 窗口优化的时候，如何将外部的约束加入到窗口中？为什么仅仅只是yaw角补偿就行了
     // ORB-SLAM中使用共视图，将局部地图之外的关键帧的位姿固定从而限定了局部地图中关键帧的优化，否则的话，每次优化都可以整体任意偏移和旋转
-    // 在这里是如何限制窗口内的帧的位姿的变动的？
-
+    // xc's todo: 在这里是如何限制窗口内的帧的位姿的变动的？在这里使用了FEJ来保证对窗口内关键帧的约束，但是又没有严格按照FEJ来执行，因此对yaw和position进行补偿，保证轨迹的平滑
     for (int i = 0; i < NUM_OF_CAM; i++)
     {
         tic[i] = Vector3d(para_Ex_Pose[i][0],
@@ -1023,8 +1026,16 @@ void Estimator::double2vector()
         td = para_Td[0][0];
 
     // relative info between two loop frame
+#if 0
+    std::cout << "relocalization_info = " << relocalization_info << std::endl;
+#endif
     if(relocalization_info) // 类似进行一个调整
-    { 
+    {
+        /**
+         * 在vins_estimator中，我们并没有使用闭环帧的任何信息，只是根据其与窗口中的某一关键帧的共视来构建视觉重投影误差，进而优化得到闭环帧在VIO窗口中的位姿
+         * 既然它可以被认为是窗口中的某一帧，那么其yaw和position也应该像窗口中的其他关键帧一样被补偿
+         * 这个位姿当然不会被直接使用
+         */
         Matrix3d relo_r;
         Vector3d relo_t;
         relo_r = rot_diff * Quaterniond(relo_Pose[6], relo_Pose[3], relo_Pose[4], relo_Pose[5]).normalized().toRotationMatrix();
@@ -1033,16 +1044,40 @@ void Estimator::double2vector()
                                      relo_Pose[2] - para_Pose[0][2]) + origin_P0;
         double drift_correct_yaw;
         drift_correct_yaw = Utility::R2ypr(prev_relo_r).x() - Utility::R2ypr(relo_r).x();
+#if 0
+        double drift_correct_pitch = Utility::R2ypr(prev_relo_r).y() - Utility::R2ypr(relo_r).y();
+        double drift_correct_roll = Utility::R2ypr(prev_relo_r).z() - Utility::R2ypr(relo_r).z();
+        std::cout << "yaw = " << drift_correct_yaw << ", pitch = " << drift_correct_pitch << ", roll = " << drift_correct_roll << std::endl;
+
+        Eigen::Matrix3d drift_R = prev_relo_r * relo_r.inverse();
+        double drift_correct_yaw1 = Utility::R2ypr(drift_R).x();
+        double drift_correct_pitch1 = Utility::R2ypr(drift_R).y();
+        double drift_correct_roll1 = Utility::R2ypr(drift_R).z();
+        std::cout << "yaw1 = " << drift_correct_yaw1 << ", pitch1 = " << drift_correct_pitch1 << ", roll1 = " << drift_correct_roll1 << std::endl;
+#endif
+        /**
+         * 这里的drift_correct_yaw实际上描述的是当前VIO坐标系到闭环帧坐标系的旋转，这个量描述了系统旋转的漂移程度
+         *
+         * relo_r = Ry1 * Rp1 * Rr1, prev_relo_r = Ry2 * Rp2 * Rr2
+         * 由于一个VIO系统是yaw和position不可观，因此yaw存在漂移（就像尺度存在漂移一样），这里操作的目的就是修正VIO系统的yaw角度和position的漂移
+         *
+         * drift_correct_r = R(y2 - y1)，那么drift_correct_r * relo_r = Ry2 * Rp1 * Rr1
+         *
+         * (drift_correct_r    drift_correct_t)  *  (relo_t)  = prev_relo_t；实际上就是将当前VIO的位姿进行修正
+         * (       0                   1      )     (   1  )
+         */
+        // 注意即使到了这里，我们并没有直接修改当前VIO或者闭环帧的位姿，只是在求解一些相对位姿
         drift_correct_r = Utility::ypr2R(Vector3d(drift_correct_yaw, 0, 0));
         drift_correct_t = prev_relo_t - drift_correct_r * relo_t;   
         // T_loop_w * T_w_cur = T_loop_cur
-        relo_relative_t = relo_r.transpose() * (Ps[relo_frame_local_index] - relo_t);
-        relo_relative_q = relo_r.transpose() * Rs[relo_frame_local_index];
+        relo_relative_t = relo_r.transpose() * (Ps[relo_frame_local_index] - relo_t);  // 当前关键帧到闭环帧的平移
+        relo_relative_q = relo_r.transpose() * Rs[relo_frame_local_index];  // 当前关键帧到闭环帧的旋转
+        // 返回的角度在-0.5pi~0.5pi
         relo_relative_yaw = Utility::normalizeAngle(Utility::R2ypr(Rs[relo_frame_local_index]).x() - Utility::R2ypr(relo_r).x());
         //cout << "vins relo " << endl;
         //cout << "vins relative_t " << relo_relative_t.transpose() << endl;
         //cout << "vins relative_yaw " <<relo_relative_yaw << endl;
-        relocalization_info = 0;    
+        relocalization_info = 0;  // 复位为0，等待下一次回环
 
     }
 }
@@ -1233,8 +1268,10 @@ void Estimator::optimization()
 
     ROS_DEBUG("visual measurement count: %d", f_m_cnt);
     ROS_DEBUG("prepare for ceres: %f", t_prepare.toc());
+    // xc's todo: 为什么优化闭环关键帧，其应该没有漂移，应该是后面的关键帧才会有漂移发生？这个优化发生在4自由度位姿图优化前还是后？
+    // xc's todo: 如果优化回环关键帧，那么那些与回环关键帧构成共视的关键帧的位姿难道不应该同步优化吗？
     // 回环检测相关的约束
-    if(relocalization_info)
+    if(relocalization_info)  // 找到了有效的回环信息
     {
         //printf("set relocalization factor! \n");
         ceres::LocalParameterization *local_parameterization = new PoseLocalParameterization();
@@ -1249,7 +1286,8 @@ void Estimator::optimization()
                 continue;
             ++feature_index;
             int start = it_per_id.start_frame;
-            if(start <= relo_frame_local_index)   // 这个地图点能被对应的当前帧看到
+            // 闭环关键帧与窗口中的relo_frame_local_index对应的关键帧构成回环，如果relo_frame_local_index对应的关键帧看不到，那么闭环关键帧也一定看不到
+            if(start <= relo_frame_local_index)   
             {   
                 // 寻找回环帧能看到的地图点
                 while((int)match_points[retrive_feature_index].z() < it_per_id.feature_id)
@@ -1264,6 +1302,8 @@ void Estimator::optimization()
                     Vector3d pts_i = it_per_id.feature_per_frame[0].point;
                     
                     ProjectionFactor *f = new ProjectionFactor(pts_i, pts_j);
+                    // 某个特征点既可以被回环关键帧看到，又可以被窗口中的某一个关键帧看到，从而构建视觉重投影误差
+                    // 误匹配的可能性还是比较大的，使用核函数
                     problem.AddResidualBlock(f, loss_function, para_Pose[start], relo_Pose, para_Ex_Pose[0], para_Feature[feature_index]);
                     retrive_feature_index++;
                 }     
@@ -1713,11 +1753,11 @@ void Estimator::slideWindowOld()
 /**
  * @brief 接受回环帧的消息
  * 
- * @param[in] _frame_stamp 
- * @param[in] _frame_index 
- * @param[in] _match_points 
- * @param[in] _relo_t 
- * @param[in] _relo_r 
+ * @param[in] _frame_stamp 闭环关键帧对应的当前关键帧的时间戳
+ * @param[in] _frame_index 获取闭环的当前关键帧的索引
+ * @param[in] _match_points 闭环关键帧的与当前关键帧匹配的归一化相机系的特征点
+ * @param[in] _relo_t 闭环关键帧的位置
+ * @param[in] _relo_r 闭环关键帧的旋转
  */
 void Estimator::setReloFrame(double _frame_stamp, int _frame_index, vector<Vector3d> &_match_points, Vector3d _relo_t, Matrix3d _relo_r)
 {
@@ -1727,7 +1767,7 @@ void Estimator::setReloFrame(double _frame_stamp, int _frame_index, vector<Vecto
     match_points = _match_points;
     prev_relo_t = _relo_t;
     prev_relo_r = _relo_r;
-    // 在滑窗中寻找当前帧，因为VIO送给回环结点的是倒数第三帧，因此，很有可能这个当前帧还在滑窗里
+    // 在滑窗中寻找当前关键帧，因为VIO送给回环结点的是倒数第三帧，因此，很有可能这个当前帧还在滑窗里
     for(int i = 0; i < WINDOW_SIZE; i++)
     {
         if(relo_frame_stamp == Headers[i].stamp.toSec())
@@ -1735,6 +1775,7 @@ void Estimator::setReloFrame(double _frame_stamp, int _frame_index, vector<Vecto
             relo_frame_local_index = i; // 对应滑窗中的第i帧
             relocalization_info = 1;    // 这是一个有效的回环信息
             for (int j = 0; j < SIZE_POSE; j++)
+                // 注意这里直接赋值，对应的是同一个pose，因此必须逐个元素赋值
                 relo_Pose[j] = para_Pose[i][j]; // 借助VIO优化回环帧位姿，初值先设为当前帧位姿
         }
     }

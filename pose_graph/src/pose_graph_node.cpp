@@ -31,7 +31,7 @@ queue<Eigen::Vector3d> odometry_buf;
 std::mutex m_buf;
 std::mutex m_process;
 int frame_index  = 0;
-int sequence = 1;
+int sequence = 1;  // 初值为1，不是0；加载的地图的序列号为0，用于区分是加载的地图还是系统运行生成的地图
 PoseGraph posegraph;
 int skip_first_cnt = 0;
 int SKIP_CNT;
@@ -106,13 +106,13 @@ void image_callback(const sensor_msgs::ImageConstPtr &image_msg)
     //printf(" image time %f \n", image_msg->header.stamp.toSec());
 
     // detect unstable camera stream
-    if (last_image_time == -1)
+    if (last_image_time == -1)  // 初始化为-1
         last_image_time = image_msg->header.stamp.toSec();
     // 检查时间戳是否错乱以及延时过大
     else if (image_msg->header.stamp.toSec() - last_image_time > 1.0 || image_msg->header.stamp.toSec() < last_image_time)
     {
         ROS_WARN("image discontinue! detect a new sequence!");
-        new_sequence(); // 如果发生了就新建一个序列 TODO: sequense 是否可以合并？
+        new_sequence(); // 如果发生了就新建一个序列 TODO: sequence 是否可以合并？:后面有合并的逻辑
     }
     last_image_time = image_msg->header.stamp.toSec();
 }
@@ -148,7 +148,7 @@ void pose_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
     if(!LOOP_CLOSURE)
         return;
     m_buf.lock();
-    pose_buf.push(pose_msg);
+    pose_buf.push(pose_msg);  // 这里是关键帧的位姿，位姿的表示是对应IMU在
     m_buf.unlock();
     /*
     printf("pose t: %f, %f, %f   q: %f, %f, %f %f \n", pose_msg->pose.pose.position.x,
@@ -168,6 +168,7 @@ void pose_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
  */
 void imu_forward_callback(const nav_msgs::Odometry::ConstPtr &forward_msg)
 {
+    // 利用imu高频的性质输出一个高频的位姿
     if (VISUALIZE_IMU_FORWARD)
     {
         Vector3d vio_t(forward_msg->pose.pose.position.x, forward_msg->pose.pose.position.y, forward_msg->pose.pose.position.z);
@@ -193,7 +194,7 @@ void imu_forward_callback(const nav_msgs::Odometry::ConstPtr &forward_msg)
         cameraposevisual.publish_by(pub_camera_pose_visual, forward_msg->header);
     }
 }
-// 利用VIO进行重定位的结果进行修正
+// 利用VIO进行重定位的结果进行修正：这里的位姿对应着vins_estimator中优化完后得到的当前关键帧到闭环关键帧之间的变换
 void relo_relative_pose_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
 {
     // T_loop_cur
@@ -206,8 +207,9 @@ void relo_relative_pose_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
     relative_q.y() = pose_msg->pose.pose.orientation.y;
     relative_q.z() = pose_msg->pose.pose.orientation.z;
     double relative_yaw = pose_msg->twist.twist.linear.x;
-    int index = pose_msg->twist.twist.linear.y; // 当前帧的idx
+    int index = pose_msg->twist.twist.linear.y; // 获取闭环的当前关键帧的索引
     //printf("receive index %d \n", index );
+    // KeyFrame中也有同名变量，注意不要弄混了
     Eigen::Matrix<double, 8, 1 > loop_info;
     loop_info << relative_t.x(), relative_t.y(), relative_t.z(),
                  relative_q.w(), relative_q.x(), relative_q.y(), relative_q.z(),
@@ -333,7 +335,7 @@ void process()
         if(!image_buf.empty() && !point_buf.empty() && !pose_buf.empty())
         {
             // 原图时间戳比另外两个晚，只能扔掉早于第一个原图的消息
-            if (image_buf.front()->header.stamp.toSec() > pose_buf.front()->header.stamp.toSec())
+            if (image_buf.front()->header.stamp.toSec() > pose_buf.front()->header.stamp.toSec())  // 图像不是关键帧
             {
                 pose_buf.pop();
                 printf("throw pose at beginning\n");
@@ -348,16 +350,16 @@ void process()
             else if (image_buf.back()->header.stamp.toSec() >= pose_buf.front()->header.stamp.toSec() 
                 && point_buf.back()->header.stamp.toSec() >= pose_buf.front()->header.stamp.toSec())
             {
-                pose_msg = pose_buf.front();    // 取出来pose
+                pose_msg = pose_buf.front();    // 取出来pose，注意这里取的是front
                 pose_buf.pop();
                 while (!pose_buf.empty())   // 清空所有的pose，回环的帧率慢一些没关系
                     pose_buf.pop();
-                // 找到对应pose的原图
+                // 找到对应pose的原图：因为有image_buf.front()->header.stamp.toSec() <= pose_buf.front()->header.stamp.toSec() <= image_buf.back()->header.stamp.toSec()
                 while (image_buf.front()->header.stamp.toSec() < pose_msg->header.stamp.toSec())
                     image_buf.pop();
                 image_msg = image_buf.front();
                 image_buf.pop();
-                // 找到对应的地图点
+                // 找到对应的地图点：有关键帧就一定能取到关键帧对应的地图点
                 while (point_buf.front()->header.stamp.toSec() < pose_msg->header.stamp.toSec())
                     point_buf.pop();
                 point_msg = point_buf.front();
@@ -431,10 +433,13 @@ void process()
 
                     cv::Point2f p_2d_uv, p_2d_normal;
                     double p_id;
+                    // 相机归一化坐标系坐标
                     p_2d_normal.x = point_msg->channels[i].values[0];
                     p_2d_normal.y = point_msg->channels[i].values[1];
+                    // 图像坐标系的像素坐标
                     p_2d_uv.x = point_msg->channels[i].values[2];
                     p_2d_uv.y = point_msg->channels[i].values[3];
+                    // 地图点的id
                     p_id = point_msg->channels[i].values[4];
                     point_2d_normal.push_back(p_2d_normal);
                     point_2d_uv.push_back(p_2d_uv);
@@ -443,6 +448,7 @@ void process()
                     //printf("u %f, v %f \n", p_2d_uv.x, p_2d_uv.y);
                 }
                 // 创建回环检测节点的KF
+                // frame_index初始化为0，sequence表示当前的序列数
                 KeyFrame* keyframe = new KeyFrame(pose_msg->header.stamp.toSec(), frame_index, T, R, image,
                                    point_3d, point_2d_uv, point_2d_normal, point_id, sequence);   
                 m_process.lock();
@@ -493,8 +499,8 @@ int main(int argc, char **argv)
     // read param：使用的都是默认参数，为0
     n.getParam("visualization_shift_x", VISUALIZATION_SHIFT_X); // 这两个shift基本都是0
     n.getParam("visualization_shift_y", VISUALIZATION_SHIFT_Y);
-    n.getParam("skip_cnt", SKIP_CNT);   // 跳过前SKIP_CNT帧
-    n.getParam("skip_dis", SKIP_DIS);   // 两帧距离门限
+    n.getParam("skip_cnt", SKIP_CNT);   // 每隔SKIP_CNT帧处理一次，并不是每一帧都会检测
+    n.getParam("skip_dis", SKIP_DIS);   // 相邻两次的检测的关键帧的位置的距离需要大于这个值
 #if 0
     std::cout << "VISUALIZATION_SHIFT_X = " << VISUALIZATION_SHIFT_X << std::endl;
     std::cout << "VISUALIZATION_SHIFT_Y = " << VISUALIZATION_SHIFT_Y << std::endl;
@@ -578,6 +584,7 @@ int main(int argc, char **argv)
     pub_camera_pose_visual = n.advertise<visualization_msgs::MarkerArray>("camera_pose_visual", 1000);
     pub_key_odometrys = n.advertise<visualization_msgs::Marker>("key_odometrys", 1000);
     pub_vio_path = n.advertise<nav_msgs::Path>("no_loop_path", 1000);
+    // 用于快速重定位的publish
     pub_match_points = n.advertise<sensor_msgs::PointCloud>("match_points", 100);
 
     std::thread measurement_process;

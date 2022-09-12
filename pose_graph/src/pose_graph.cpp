@@ -47,12 +47,13 @@ void PoseGraph::loadVocabulary(std::string voc_path)
     db.setVocabulary(*voc, false, 0);
 }
 
+// flag_detect_loop传入的始终是1
 void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
 {
     //shift to base frame
     Vector3d vio_P_cur;
     Matrix3d vio_R_cur;
-    if (sequence_cnt != cur_kf->sequence)   // 发生了sequence的跳变
+    if (sequence_cnt != cur_kf->sequence)   // 发生了sequence的跳变，可以理解成不是一个地图
     {
         sequence_cnt++;
         // 复位一些变量
@@ -72,14 +73,14 @@ void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
     cur_kf->index = global_index;   // 赋值索引
     global_index++;
 	int loop_index = -1;
-    if (flag_detect_loop)
+    if (flag_detect_loop)  // 始终检测
     {
         TicToc tmp_t;
         loop_index = detectLoop(cur_kf, cur_kf->index);
     }
     else
     {
-        addKeyFrameIntoVoc(cur_kf);
+        addKeyFrameIntoVoc(cur_kf);  // 将新提的FAST角点的信息加入到DBOW的数据库中
     }
 	if (loop_index != -1)   // 代表找到了有效的回环帧
 	{
@@ -103,20 +104,48 @@ void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
             relative_t = cur_kf->getLoopRelativeT();
             relative_q = (cur_kf->getLoopRelativeQ()).toRotationMatrix();
             // T_w_old * T_old_cur = T_w_cur,这就是回环矫正后当前帧的位姿
+            /**
+             * relative_pose中，闭环帧的位姿是通过当前关键帧的地图点计算得到，因此就得到了没有漂移的当前关键帧到闭环关键帧时间的位姿变化
+             * 再通过没有漂移的闭环关键帧的位姿就可以计算得到当前关键帧的位姿
+             * Tw_old * Told_cur即为所得
+             */
             w_P_cur = w_R_old * relative_t + w_P_old;
             w_R_cur = w_R_old * relative_q;
             double shift_yaw;
             Matrix3d shift_r;
             Vector3d shift_t; 
             // 回环矫正前的位姿认为是T_w'_cur
-            // 下面求得是 T_w_cur * T_cur_w' = T_w_w'
+            /**
+             * T_w_cur * T_cur_w' = T_w_w'，计算的是矫正前的位姿到矫正后的位姿的变换
+             *
+             * 这里的shift_yaw只是在两个地图合并的时候才会使用，两个地图的Z轴都是重力方向，因此两个地图的世界系实际上只会有yaw角的变动
+             */
+            // xc's todo: 为什么这里不使用相对位姿的yaw角度，而是分解求解yaw角度来做减法；实际上两者是不一样的，除非两个坐标系真的只有yaw角变化，而pitch和roll完全没有变化，此时两者才有可能是一样的
+            // 在这里已经假设两个世界系只有yaw角的变动了，因此就直接这样计算了，如果不满足这个假设也没办法了，毕竟系统运行到这里，也没办法继续优化世界系的Z轴方向了
+            // 实际上选择相对旋转的yaw角与这里的shift_yaw一般差距很小，因此误差应该也不会大
             shift_yaw = Utility::R2ypr(w_R_cur).x() - Utility::R2ypr(vio_R_cur).x();
             shift_r = Utility::ypr2R(Vector3d(shift_yaw, 0, 0));
             shift_t = w_P_cur - w_R_cur * vio_R_cur.transpose() * vio_P_cur; 
             // shift vio pose of whole sequence to the world frame
             // 如果这两个不是同一个sequence，并且当前sequence没有跟之前合并，多地图合并
             if (old_kf->sequence != cur_kf->sequence && sequence_loop[cur_kf->sequence] == 0)
-            {  
+            {
+                /**
+                 * 从打印的结果看，两个世界系的pitch和roll并不相等，这是不正常的，这说明系统的重力方向并没有优化到准确方向，当然这个差值一般相对于yaw很小
+                 * 有没有可能根据两个世界系的pitch和roll不同来进一步优化系统的世界系Z轴方向
+                 */
+#if 0
+                double shift_pitch = Utility::R2ypr(w_R_cur).y() - Utility::R2ypr(vio_R_cur).y();
+                double shift_roll = shift_yaw = Utility::R2ypr(w_R_cur).z() - Utility::R2ypr(vio_R_cur).z();
+                std::cout << "shift_yaw = " << shift_yaw << ", shift_pitch = " << shift_pitch << ", shift_roll = " << shift_roll << std::endl;
+
+                Eigen::Matrix3d Rw_w = w_R_cur * vio_R_cur.inverse();
+                double shift_yaw1 = Utility::R2ypr(Rw_w).x();
+                double shift_pitch1 = Utility::R2ypr(Rw_w).y();
+                double shift_roll1 = Utility::R2ypr(Rw_w).z();
+                std::cout << "shift_yaw1 = " << shift_yaw1 << ", shift_pitch = " << shift_pitch1 << ", shift_roll = " << shift_roll1 << std::endl;
+#endif
+                // 以下实际上是将当前序列的位姿转换到闭环关键帧所在序列的世界系下
                 w_r_vio = shift_r;
                 w_t_vio = shift_t;
                 // T_w_w' * T_w'_cur
@@ -124,6 +153,7 @@ void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
                 vio_R_cur = w_r_vio *  vio_R_cur;
                 cur_kf->updateVioPose(vio_P_cur, vio_R_cur);    // 更新当前帧位姿
                 list<KeyFrame*>::iterator it = keyframelist.begin();
+                // notes: 没有将这个序列的地图点也更新一下
                 // 同时把这个序列当前帧之间的位姿都更新过来
                 for (; it != keyframelist.end(); it++)   
                 {
@@ -140,6 +170,7 @@ void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
                 // 代表这个序列已经跟之前的序列合并过了，这里实现的也就是一个序列的合并
                 sequence_loop[cur_kf->sequence] = 1;
             }
+            // notes：合并之后还是会做4自由度位姿图优化，这个跟ORB-SLAM3是不一样的，在ORB-SLAM3中，地图合并之后就结束了
             m_optimize_buf.lock();
             optimize_buf.push(cur_kf->index);   // 相当于通知4dof优化线程开始干活
             m_optimize_buf.unlock();
@@ -149,8 +180,15 @@ void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
     Vector3d P;
     Matrix3d R;
     cur_kf->getVioPose(P, R);
-    P = r_drift * P + t_drift;  // 根据全局优化后进行位姿调整
+    // 根据全局优化后进行位姿调整，注意这里是r_drift和t_drift
+#if 0
+    if (loop_index != -1)
+        std::cout << "在addKeyFrame中更新当前关键帧的位姿" << std::endl;
+#endif
+    // 4DOF优化耗时比较大，因此r_drift与t_drift并不总是在其中计算，更有可能在updateKeyFrameLoop得到计算；测试表明，更新经常性发生在这里
+    P = r_drift * P + t_drift;
     R = r_drift * R;
+    // 注意在这里更新的是世界系的位姿，不是VIO的位姿，后面如果要做4DOF优化的时候，在其中使用的是VIO的位姿
     cur_kf->updatePose(P, R);
     // 下面是可视化部分
     Quaterniond Q{R};
@@ -362,25 +400,26 @@ int PoseGraph::detectLoop(KeyFrame* keyframe, int frame_index)
     cv::Mat loop_result;
     if (DEBUG_IMAGE)
     {
-        loop_result = compressed_image.clone();
+        loop_result = compressed_image.clone();  // 当前关键帧对应的图像
         if (ret.size() > 0)
             putText(loop_result, "neighbour score:" + to_string(ret[0].Score), cv::Point2f(10, 50), CV_FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255));
     }
     // visual loop result 
     if (DEBUG_IMAGE)
     {
-        for (unsigned int i = 0; i < ret.size(); i++)
+        for (unsigned int i = 0; i < ret.size(); i++)  // 回环帧对应的图像
         {
             int tmp_index = ret[i].Id;
             auto it = image_pool.find(tmp_index);
             cv::Mat tmp_image = (it->second).clone();
             putText(tmp_image, "index:  " + to_string(tmp_index) + "loop score:" + to_string(ret[i].Score), cv::Point2f(10, 50), CV_FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255));
-            cv::hconcat(loop_result, tmp_image, loop_result);
+            cv::hconcat(loop_result, tmp_image, loop_result);  // 将当前关键帧及闭环帧的图像全部水平合并
         }
     }
+    // notes: 最高分要大于0.05，次高分要大于0.015，就认为找到了回环
     // a good match with its nerghbour
     // ret按照得分大小降序排列的，这里确保返回的候选KF数目至少一个且得分满足要求
-    if (ret.size() >= 1 &&ret[0].Score > 0.05)
+    if (ret.size() >= 1 &&ret[0].Score > 0.05)  // 最高分大于0.05
         // 开始遍历其他候选帧
         for (unsigned int i = 1; i < ret.size(); i++)
         {
@@ -397,6 +436,7 @@ int PoseGraph::detectLoop(KeyFrame* keyframe, int frame_index)
                     putText(tmp_image, "loop score:" + to_string(ret[i].Score), cv::Point2f(10, 50), CV_FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255));
                     cv::hconcat(loop_result, tmp_image, loop_result);
                 }
+                // notes：添加一个break应该更符合逻辑
             }
 
         }
@@ -407,11 +447,11 @@ int PoseGraph::detectLoop(KeyFrame* keyframe, int frame_index)
         cv::waitKey(20);
     }
 */
-    if (find_loop && frame_index > 50)  // 认为找到了回环并且当前帧是第50帧以后
+    if (find_loop && frame_index > 50)  // 认为找到了回环并且当前帧是第50帧以后，也就是前面50帧不会做回环的操作
     {
         int min_index = -1;
         // 寻找得分大于0.015的idx最小的那个帧，这样可以尽可能调整更多帧的位姿
-        for (unsigned int i = 0; i < ret.size(); i++)
+        for (unsigned int i = 0; i < ret.size(); i++)  // 注意这里认为0.015以上的得分都是有效的闭环帧，并不是直接找得分最高的候选闭环帧
         {
             if (min_index == -1 || (ret[i].Id < min_index && ret[i].Score > 0.015))
                 min_index = ret[i].Id;
@@ -435,7 +475,7 @@ void PoseGraph::addKeyFrameIntoVoc(KeyFrame* keyframe)
         image_pool[keyframe->index] = compressed_image;
     }
 
-    db.add(keyframe->brief_descriptors);
+    db.add(keyframe->brief_descriptors);  // 仅仅添加了新提的FAST角点的描述子，并没有窗口中Harris角点的描述子
 }
 
 /**
@@ -452,8 +492,8 @@ void PoseGraph::optimize4DoF()
         // 取出最新的形成回环的当前帧
         while(!optimize_buf.empty())
         {
-            cur_index = optimize_buf.front();
-            first_looped_index = earliest_loop_index;   // 找到最早的回环帧
+            cur_index = optimize_buf.front();  // 获取的是闭环的当前关键帧的索引
+            first_looped_index = earliest_loop_index;   // 找到当前关键帧的闭环关键帧的索引
             optimize_buf.pop();
         }
         m_optimize_buf.unlock();
@@ -492,13 +532,14 @@ void PoseGraph::optimize4DoF()
             // 遍历KF的list
             for (it = keyframelist.begin(); it != keyframelist.end(); it++)
             {
-                if ((*it)->index < first_looped_index)  // idx小于最早回环帧就算了
+                if ((*it)->index < first_looped_index)  // idx小于最早回环帧就算了，不在回环调整的范围内
                     continue;
                 (*it)->local_index = i; // 这个是在本次优化中的idx
                 Quaterniond tmp_q;
                 Matrix3d tmp_r;
                 Vector3d tmp_t;
-                (*it)->getVioPose(tmp_t, tmp_r);    //  得到位姿
+                //  获取VIO下的位姿，注意，即使是构成闭环的当前关键帧依然选择的是VIO的位姿，注意在addKeyFrame中可能更新过世界系的位姿，但是VIO的位姿没有更新过
+                (*it)->getVioPose(tmp_t, tmp_r);
                 tmp_q = tmp_r;
                 t_array[i][0] = tmp_t(0);
                 t_array[i][1] = tmp_t(1);
@@ -514,7 +555,7 @@ void PoseGraph::optimize4DoF()
                 // 只有yaw角参与优化，成为参数块
                 problem.AddParameterBlock(euler_array[i], 1, angle_local_parameterization);
                 problem.AddParameterBlock(t_array[i], 3);
-                // 最早回环帧以及加载进来的地图保持不变，不进行优化
+                // 条件1：闭环关键帧的位姿不优化；条件2：加载的地图的关键帧不优化
                 if ((*it)->index == first_looped_index || (*it)->sequence == 0)
                 {   
                     problem.SetParameterBlockConstant(euler_array[i]);
@@ -522,16 +563,30 @@ void PoseGraph::optimize4DoF()
                 }
 
                 //add edge
-                // 建立约束，每一帧和之前5帧建立约束关系，找到这一帧前面5帧，并且需要他们是一个序列中的KF
+                // 建立约束，每一帧和之前4帧建立约束关系，找到这一帧前面4帧，并且需要他们是一个序列中的KF
+                /**
+                 * 以下的约束实际上是“稳态的”，在没有其他约束的情况下，系统实际上并不需要优化就已经达到最优了；
+                 * 后面会根据当前关键帧及其闭环关键帧构建约束，促使系统发生变化，开始优化，知道收敛
+                 *
+                 * 第一种约束：每一个关键帧与其前面4个关键帧的相对平移和yaw角度的插值，当前状态即可使得约束达到最优
+                 * 第二种约束：当前关键帧与其闭环关键帧构成的相对平移和yaw角度的差值，当前状态并不能使得优化最优，相反，此时的残差应该是比较大的
+                 *
+                 * 需要注意的是，第二种约束的观测是在当前关键帧下面的地图点计算闭环关键帧的位姿并经过VIO中的滑窗优化得到的，是一个正确的、不含有漂移的相对约束
+                 */
                 for (int j = 1; j < 5; j++)
                 {
+                    // i从0开始递增，i- j < 0显然取不到
                   if (i - j >= 0 && sequence_array[i] == sequence_array[i-j])
                   {
+#if 0
+                      std::cout << "first_looped_index" << first_looped_index << std::endl;
+                      std::cout << "i = " << i << ", j = " << j << ", i - j = " << i - j << std::endl;
+#endif
                     // 计算T_i-j_w * T_w_i = T_i-j_i
                     Vector3d euler_conncected = Utility::R2ypr(q_array[i-j].toRotationMatrix());
                     Vector3d relative_t(t_array[i][0] - t_array[i-j][0], t_array[i][1] - t_array[i-j][1], t_array[i][2] - t_array[i-j][2]);
-                    relative_t = q_array[i-j].inverse() * relative_t;  // 统一到第i帧
-                    double relative_yaw = euler_array[i][0] - euler_array[i-j][0];
+                    relative_t = q_array[i-j].inverse() * relative_t;  // 统一到第i帧，对应着Ti-j_i的平移部分
+                    double relative_yaw = euler_array[i][0] - euler_array[i-j][0];  // 两帧之间的位姿的yaw角度的差值
                     ceres::CostFunction* cost_function = FourDOFError::Create( relative_t.x(), relative_t.y(), relative_t.z(),
                                                    relative_yaw, euler_conncected.y(), euler_conncected.z());
                     // 对i-j帧和第i帧都成约束
@@ -541,6 +596,17 @@ void PoseGraph::optimize4DoF()
                                             t_array[i]);
                   }
                 }
+                /**
+                 * 我们将第一帧设为i，最后一帧设为j，并且第j帧也就是构成闭环的当前关键帧，那么
+                 *  根据上面的约束有：
+                 *      yaw_j - yaw_i = (yaw_j - yaw_j-1) + (yaw_j-1 - yaw_j-2) + ... + (yaw_i+1 - yaw_i)
+                 *  根据下面的约束有：
+                 *      yaw_j - yaw_i = (*it)->getLoopRelativeYaw()
+                 *
+                 *  对平移也有类似的式子，同样可以构成约束
+                 *
+                 * 这两个等式的坐标是相同的，右边是不同的，因此构成了图优化，推动了优化的进行
+                 */
 
                 //add loop edge
                 // 如果这一帧有回环帧
@@ -558,7 +624,6 @@ void PoseGraph::optimize4DoF()
                                                                   t_array[connected_index], 
                                                                   euler_array[i], 
                                                                   t_array[i]);
-                    
                 }
                 
                 if ((*it)->index == cur_index)  // 到当前帧了，不会再有添加了，结束
@@ -577,6 +642,9 @@ void PoseGraph::optimize4DoF()
                 printf("optimize i: %d p: %f, %f, %f\n", j, t_array[j][0], t_array[j][1], t_array[j][2] );
             }
             */
+#if 0
+            std::cout << "在optimize4DOF中更新当前关键帧的位姿" << std::endl;
+#endif
             m_keyframelist.lock();
             i = 0;
             // 将优化后的位姿恢复
@@ -588,7 +656,7 @@ void PoseGraph::optimize4DoF()
                 tmp_q = Utility::ypr2R(Vector3d(euler_array[i][0], euler_array[i][1], euler_array[i][2]));
                 Vector3d tmp_t = Vector3d(t_array[i][0], t_array[i][1], t_array[i][2]);
                 Matrix3d tmp_r = tmp_q.toRotationMatrix();
-                (*it)-> updatePose(tmp_t, tmp_r);   // 更新位姿
+                (*it)-> updatePose(tmp_t, tmp_r);   // 更新世界系的位姿，VIO的位姿没有发生变动
 
                 if ((*it)->index == cur_index)
                     break;
@@ -601,6 +669,26 @@ void PoseGraph::optimize4DoF()
             cur_kf->getVioPose(vio_t, vio_r);   // VIO的位姿
             m_drift.lock();
             // 计算当前帧的VIO位姿和优化后位姿差
+            /**
+             * cur_r = Ry2 * Rp2 * Rr2, vio_r = Ry1 * Rp1 * Rr1
+             * shift_r = R(y2 - y1)
+             * R(y2 - y1) * vio_r = Ry2 * Rp1 * Rr1
+             *
+             * 如果令vio对应的世界系是w'，那么cur_r * vio_r表示w'到w的旋转；Tw_cur * Tcur_w'
+             * 使用r_shift描述两个世界系之间的相对旋转，由于VIO系统，只有yaw角漂移，因此仅仅使用yaw
+             * 使用t_shift描述两个世界系之间的相对平移，注意这里的计算与updateKeyFrameLoop不同，直接使用的r_shift，而不再是使用原始结果了；
+             *
+             * 从优化的原理上看，这里并没有优化pitch和roll，因此优化前后的pitch和roll实际上没有发生变化（这一点可以从测试上得到验证）
+             *
+             * 既然pitch和roll没有发生变动，因此使用原始数据计算和直接使用r_shift是一样的，这是区别于updateKeyFrameLoop的地方
+             */
+#if 0
+            Eigen::Matrix3d drift_R = cur_r * vio_r.inverse();
+            double drift_yaw = Utility::R2ypr(drift_R).x();
+            double drift_pitch = Utility::R2ypr(drift_R).y();
+            double drift_roll = Utility::R2ypr(drift_R).z();
+            std::cout << "yaw = " << drift_yaw << ", pitch = " << drift_pitch << ", roll = " << drift_roll << std::endl;
+#endif
             yaw_drift = Utility::R2ypr(cur_r).x() - Utility::R2ypr(vio_r).x();
             r_drift = Utility::ypr2R(Vector3d(yaw_drift, 0, 0));
             t_drift = cur_t - r_drift * vio_t;
@@ -618,12 +706,13 @@ void PoseGraph::optimize4DoF()
              */
             for (; it != keyframelist.end(); it++)
             {
+                // 将构成闭环的当前关键帧之后的关键帧的位姿根据当前关键帧的漂移进行修正，这里认为他们的漂移程度与当前关键帧的漂移程度相同
                 Vector3d P;
                 Matrix3d R;
                 (*it)->getVioPose(P, R);
                 P = r_drift * P + t_drift;
                 R = r_drift * R;
-                (*it)->updatePose(P, R);
+                (*it)->updatePose(P, R);  // 将关键帧的位姿更新到世界系，注意VIO下的位姿没有发生改变
             }
             m_keyframelist.unlock();
             // 可视化部分
@@ -631,7 +720,7 @@ void PoseGraph::optimize4DoF()
         }
 
         std::chrono::milliseconds dura(2000);
-        std::this_thread::sleep_for(dura);
+        std::this_thread::sleep_for(dura);  // 间隔两秒，不会频繁的触发
     }
 }
 
@@ -957,10 +1046,13 @@ void PoseGraph::publish()
     //posegraph_visualization->publish_by(pub_pose_graph, path[sequence_cnt].header);
 }
 
+// 注意这个函数并没有update任何关键帧的位姿
 void PoseGraph::updateKeyFrameLoop(int index, Eigen::Matrix<double, 8, 1 > &_loop_info)
 {
-    KeyFrame* kf = getKeyFrame(index);
-    kf->updateLoop(_loop_info); // 更新和回环帧相对位姿信息
+    KeyFrame* kf = getKeyFrame(index);  // 根据获取闭环的当前关键帧的索引获取关键帧
+    // 虽然其在获得闭环的过程中使用pnp已经计算过了，但是这里的相对位姿会更准确，因此的将其更新到获取闭环的当前关键帧
+    kf->updateLoop(_loop_info);
+    // 如果yaw角度比比较大或者距离比较远，那么看到的可能就不是一个场景了，此时计算得到的闭环帧也就不那么可信了
     if (abs(_loop_info(7)) < 30.0 && Vector3d(_loop_info(0), _loop_info(1), _loop_info(2)).norm() < 20.0)
     {
         if (FAST_RELOCALIZATION)    // 肯定只有这种情况下触发
@@ -968,7 +1060,9 @@ void PoseGraph::updateKeyFrameLoop(int index, Eigen::Matrix<double, 8, 1 > &_loo
             KeyFrame* old_kf = getKeyFrame(kf->loop_index); // 得到回环帧信息
             Vector3d w_P_old, w_P_cur, vio_P_cur;
             Matrix3d w_R_old, w_R_cur, vio_R_cur;
+            // 注意这里闭环关键帧获取的是pose，其可能在前面矫正过，位姿是准确的
             old_kf->getPose(w_P_old, w_R_old);
+            // 注意这里的当前关键帧获取的VIO位姿，这个位姿存在漂移
             kf->getVioPose(vio_P_cur, vio_R_cur);
 
             Vector3d relative_t;
@@ -983,6 +1077,16 @@ void PoseGraph::updateKeyFrameLoop(int index, Eigen::Matrix<double, 8, 1 > &_loo
             Matrix3d shift_r;
             Vector3d shift_t; 
             // 更新VIO位姿和修正位姿的delta pose
+            /**
+             * w_R_cur = Ry2 * Rp2 * Rr2, vio_R_cur = Ry1 * Rp1 * Rr1
+             * shift_r = R(y2 - y1)
+             * R(y2 - y1) * vio_R_cur = Ry2 * Rp1 * Rr1
+             *
+             * 如果令vio对应的世界系是w'，那么w_R_cur * vio_R_cur表示w'到w的旋转；Tw_cur * Tcur_w'
+             * 使用shift_r描述两个世界系之间的相对旋转，由于VIO系统，只有yaw角漂移，因此仅仅使用yaw
+             * 使用shift_t描述两个世界系之间的相对平移，注意相对平移的计算与相对旋转不同，相对平移的计算并没有使用shift_r，而是使用原始的w_R_cur * vio_R_cur
+             * 这里的逻辑其实不太能自洽，主要是因为重力方向并没真是的重力方向，因此实际上并不仅仅只有yaw角度上有漂移，这是系统设计上的问题；系统并没有完全解决这个问题，而是采用了折中的方式
+             */
             shift_yaw = Utility::R2ypr(w_R_cur).x() - Utility::R2ypr(vio_R_cur).x();
             shift_r = Utility::ypr2R(Vector3d(shift_yaw, 0, 0));
             shift_t = w_P_cur - w_R_cur * vio_R_cur.transpose() * vio_P_cur; 

@@ -136,7 +136,7 @@ class Utility
     }
 
     template <typename T>
-    static T normalizeAngle(const T& angle_degrees) {
+    static T normalizeAngle(const T& angle_degrees) {  // 对输入的角度，返回其对应的角度，并且这个角度在-0.5pi ~ 0.5pi
       T two_pi(2.0 * 180);
       if (angle_degrees > 0)
       return angle_degrees -

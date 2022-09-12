@@ -86,19 +86,20 @@ public:
 	cv::Mat image;
 	cv::Mat thumbnail;
 	vector<cv::Point3f> point_3d; 
-	vector<cv::Point2f> point_2d_uv;
-	vector<cv::Point2f> point_2d_norm;
-	vector<double> point_id;
-	vector<cv::KeyPoint> keypoints;	// fast角点的像素坐标
+	vector<cv::Point2f> point_2d_uv;  // 已有的Harris特征点的像素坐标
+	vector<cv::Point2f> point_2d_norm;  // 已有的Harris特征点的归一化相机系坐标
+	vector<double> point_id;  // Harris特征点的id
+	// 有可能一个像素点既是Harris特征点也是FAST特征点，注意二者的使用场景
+	vector<cv::KeyPoint> keypoints;	// fast角点的像素坐标，注意这里不包括已有的Harris特征点
 	vector<cv::KeyPoint> keypoints_norm;	// fast角点对应的归一化相机系坐标
-	vector<cv::KeyPoint> window_keypoints;
+	vector<cv::KeyPoint> window_keypoints;  // 窗口内Harris的特征点
 	vector<BRIEF::bitset> brief_descriptors;	// 额外提取的fast特征点的描述子
 	vector<BRIEF::bitset> window_brief_descriptors;	// 原来光流追踪的特征点的描述子
 	bool has_fast_point;
 	int sequence;
 
-	bool has_loop;
-	int loop_index;
-	Eigen::Matrix<double, 8, 1 > loop_info;
+	bool has_loop;  // 是否找到了闭环，至此已经通过了全部的考验
+	int loop_index;  // 当前关键帧找到的闭环关键帧的index
+	Eigen::Matrix<double, 8, 1 > loop_info;  // 其中保存的是当前关键帧到闭环关键帧的位姿变换以及当前关键帧的位姿的yaw角-闭环关键帧的yaw角
 };
 
