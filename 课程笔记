@@ -234,7 +234,8 @@
 				1.4 将IMU测试值更新给acc_0和gyr_0
 
 			2. 如果relo_buf非空，就取出最新的回环帧并赋值给relo_msg，否则relo_msg为NULL；如果relo_msg非空，那么获取回环帧的归一化相机系点集并添加到match_points中，获取回环帧的旋转和平移和frame_index，并执行estimator.setReloFrame：
-				2.1 
+				2.1 接收pose_graph线程的相关信息：构成闭环的当前关键帧的时间戳和索引、匹配点、闭环关键帧的位姿
+				2.2 搜索当前关键帧在滑窗中的索引，便于后面做优化
 
 			3. 对当前图像进行处理：获取当前图像的每个特征点的feature_id、camera_id、去畸变后的归一化相机系坐标、特征点的像素坐标和去畸变后的归一化相机系的特征点的运动速度，并将其添加到image中，然后执行estimator.processImage
 				3.1 addFeatureCheckParallax
@@ -434,7 +435,6 @@
 
 
 			4. 打印统计信息printStatistics：
-				4.1 
 
 			5. 将图像的header的frame_id设置为world，之后执行一些可视化的操作：
 				5.1 pubOdometry(estimator, header)
@@ -445,7 +445,7 @@
 				5.6 pubKeyframe(estimator)
 				5.7 如果relo_msg非空，那么执行pubRelocalization(estimator)
 
-		4.7.3 如果estimator.solver_flag等于NON_LINEAR，那么执行update:
+		4.7.3 如果estimator.solver_flag等于NON_LINEAR，那么执行update: 使用最新的VIO的位姿更新IMU递推的结果
 			1. 
 
 

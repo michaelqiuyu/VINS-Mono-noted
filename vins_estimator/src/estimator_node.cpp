@@ -214,7 +214,6 @@ void imu_callback(const sensor_msgs::ImuConstPtr &imu_msg)
 
     // xc's todo: 为什么又进行赋值？
     last_imu_t = imu_msg->header.stamp.toSec();
-
     {
         std::lock_guard<std::mutex> lg(m_state);
         predict(imu_msg);
