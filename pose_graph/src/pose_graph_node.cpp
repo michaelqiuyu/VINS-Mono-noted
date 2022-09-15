@@ -408,7 +408,7 @@ void process()
             
             cv::Mat image = ptr->image;
             // build keyframe
-            // 得到KF的位姿，转成eigen格式
+            // 得到KF的位姿（VIO的位姿），转成eigen格式
             Vector3d T = Vector3d(pose_msg->pose.pose.position.x,
                                   pose_msg->pose.pose.position.y,
                                   pose_msg->pose.pose.position.z);

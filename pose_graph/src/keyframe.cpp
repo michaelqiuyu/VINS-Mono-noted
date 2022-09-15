@@ -39,10 +39,13 @@ KeyFrame::KeyFrame(double _time_stamp, int _index, Vector3d &_vio_T_w_i, Matrix3
 {
 	time_stamp = _time_stamp;
 	index = _index;
+	// VIO下的位姿
 	vio_T_w_i = _vio_T_w_i;
 	vio_R_w_i = _vio_R_w_i;
+	// 世界系下的位姿
 	T_w_i = vio_T_w_i;
 	R_w_i = vio_R_w_i;
+	// 原始的VIO的位姿
 	origin_vio_T = vio_T_w_i;		
 	origin_vio_R = vio_R_w_i;
 	image = _image.clone();
@@ -658,15 +661,17 @@ void KeyFrame::updatePose(const Eigen::Vector3d &_T_w_i, const Eigen::Matrix3d &
 }
 
 /**
- * @brief 更新一些vio位姿，将回环修正的累计误差补偿进来
+ * @brief 更新一些vio位姿，将回环修正的累计误差补偿进来（此处作者的注释不对，这里还没有回环补偿，）
  * 
  * @param[in] _T_w_i 
  * @param[in] _R_w_i 
  */
 void KeyFrame::updateVioPose(const Eigen::Vector3d &_T_w_i, const Eigen::Matrix3d &_R_w_i)
 {
+    // 调用这个函数的地方都是发生了不同序列的合并的时候，或者初始传入一个关键帧的时候（如果关键帧的序列前面没有与其他序列合并，那么实际上也没有改变位姿）
 	vio_T_w_i = _T_w_i;
 	vio_R_w_i = _R_w_i;
+	// 给世界系的位姿赋初值
 	T_w_i = vio_T_w_i;
 	R_w_i = vio_R_w_i;
 }

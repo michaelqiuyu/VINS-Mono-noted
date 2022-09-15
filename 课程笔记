@@ -446,7 +446,22 @@
 				5.7 如果relo_msg非空，那么执行pubRelocalization(estimator)
 
 		4.7.3 如果estimator.solver_flag等于NON_LINEAR，那么执行update: 使用最新的VIO的位姿更新IMU递推的结果
-			1. 
+
+5. pose_graph
+	5.1 读取相关参数，以下介绍一些比较重要的参数：
+		SKIP_CNT：每隔SKIP_CNT帧处理一次，并不是每一帧都会检测
+		SKIP_DIS：相邻两次的检测的关键帧的位置的距离需要大于这个值
+
+	5.2 对齐图像和关键帧及其地图点，如果图像不是关键帧就直接跳过；如果pose_buf中不止一个位姿，就只取最新的位姿；最开始的SKIP_FIRST_CNT不处理；每隔SKIP_CNT帧处理一次；相邻两次的检测的关键帧的位置的距离需要大于这个值；创建关键帧，并将关键帧添加到pose_graph中
+
+	5.3 构造KeyFrame:
+		5.3.1 
+
+	5.4 addKeyFrame:
+		5.4.1 如果PoseGraph的sequence与关键帧的sequence不同，那么将VIO到世界的位姿和漂移都复位；
+		5.4.2 根据VIO到世界系的位姿变换（此时这个值是上次计算得到的，本次也会更新这个值）计算当前关键帧在世界系下的位姿并更新
+
+
 
 
 

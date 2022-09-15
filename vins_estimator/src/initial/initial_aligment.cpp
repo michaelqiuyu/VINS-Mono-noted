@@ -158,7 +158,7 @@ void RefineGravity(map<double, ImageFrame> &all_image_frame, Vector3d &g, Vector
             b = b * 1000.0;
             x = A.ldlt().solve(b);
             VectorXd dg = x.segment<2>(n_state - 3);
-            // 始终保证重力的模长为G的模长：g0的方向在不停的更新
+            // 始终保证重力的模长为G的模长：g0的方向在不停的更新；并不能保证求得的结果直接就在球面上，而是需要不停地归一化
             g0 = (g0 + lxly * dg).normalized() * G.norm();
             //double s = x(n_state - 1);
     }   

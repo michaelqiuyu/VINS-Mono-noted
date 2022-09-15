@@ -77,14 +77,14 @@ public:
 	double time_stamp; 
 	int index;
 	int local_index;
-	Eigen::Vector3d vio_T_w_i; 
+	Eigen::Vector3d vio_T_w_i;  // VIO下的位姿
 	Eigen::Matrix3d vio_R_w_i; 
-	Eigen::Vector3d T_w_i;
+	Eigen::Vector3d T_w_i;  // 世界系下的位姿
 	Eigen::Matrix3d R_w_i;
 	Eigen::Vector3d origin_vio_T;		// 原始VIO结果的位姿
 	Eigen::Matrix3d origin_vio_R;
 	cv::Mat image;
-	cv::Mat thumbnail;
+	cv::Mat thumbnail;  // 这个图像并没有使用到
 	vector<cv::Point3f> point_3d; 
 	vector<cv::Point2f> point_2d_uv;  // 已有的Harris特征点的像素坐标
 	vector<cv::Point2f> point_2d_norm;  // 已有的Harris特征点的归一化相机系坐标

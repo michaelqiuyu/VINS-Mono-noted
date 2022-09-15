@@ -53,7 +53,8 @@ void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
     //shift to base frame
     Vector3d vio_P_cur;
     Matrix3d vio_R_cur;
-    if (sequence_cnt != cur_kf->sequence)   // 发生了sequence的跳变，可以理解成不是一个地图
+    // 发生了sequence的跳变，可以理解成不是一个地图，这里的sequence_cnt递增之后，就到了一个地图了
+    if (sequence_cnt != cur_kf->sequence)
     {
         sequence_cnt++;
         // 复位一些变量
@@ -67,7 +68,9 @@ void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
     }
     // 更新一下VIO位姿
     cur_kf->getVioPose(vio_P_cur, vio_R_cur);   // 得到VIO节点的位姿
-    vio_P_cur = w_r_vio * vio_P_cur + w_t_vio;  // 回环修正后的消除累计误差的位姿
+    // 注意这里的w_r_vio和w_t_vio只有在地图合并的时候才会赋值，这里实际上是将当前关键帧的位姿变化到上一次闭环的世界系下，也就是统一到一个坐标系下面
+    // 如果只是闭环，也就是本来就是在一个坐标系下，那么这个w_r_vio始终为单位阵，w_t_vio始终为0向量
+    vio_P_cur = w_r_vio * vio_P_cur + w_t_vio;
     vio_R_cur = w_r_vio *  vio_R_cur;
     cur_kf->updateVioPose(vio_P_cur, vio_R_cur);    // 更新VIO位姿
     cur_kf->index = global_index;   // 赋值索引
@@ -868,6 +871,13 @@ void PoseGraph::savePoseGraph()
         Quaterniond PG_tmp_Q{(*it)->R_w_i};
         Vector3d VIO_tmp_T = (*it)->vio_T_w_i;
         Vector3d PG_tmp_T = (*it)->T_w_i;
+
+#if 0
+        std::cout << "VIO_tmp_Q = " << VIO_tmp_Q.coeffs().transpose() << std::endl;
+        std::cout << "VIO_tmp_T = " << VIO_tmp_T.transpose() << std::endl;
+        std::cout << "PG_tmp_Q = " << PG_tmp_Q.coeffs().transpose() << std::endl;
+        std::cout << "PG_tmp_T = " << PG_tmp_T.transpose() << std::endl;
+#endif
 
         fprintf (pFile, " %d %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %d %f %f %f %f %f %f %f %f %d\n",(*it)->index, (*it)->time_stamp, 
                                     VIO_tmp_T.x(), VIO_tmp_T.y(), VIO_tmp_T.z(), 
